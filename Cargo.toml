@@ -1,0 +1,3 @@
+[workspace]
+members = ["neoview"]
+resolver = "3"
