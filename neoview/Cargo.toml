@@ -10,3 +10,6 @@ documentation = "https://docs.rs/neoview/"
 
 [lib]
 doctest = false
+
+[dependencies]
+rustc-hash = "2.1.2"
