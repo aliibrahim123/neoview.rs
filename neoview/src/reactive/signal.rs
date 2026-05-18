@@ -1,11 +1,12 @@
 use std::{
-	fmt::{Debug, Display},
+	fmt::{Debug, Display, Write},
+	hash::Hash,
 	ops::{Deref, DerefMut},
 };
 
-use crate::reactive::{Store, prop::Prop};
+use crate::reactive::{PropId, Store, prop::Prop};
 
-macro_rules! common_guard_impls {
+macro_rules! guard_common_impls {
 	($guard:ident) => {
 		impl<T> Deref for $guard<'_, T> {
 			type Target = T;
@@ -38,7 +39,7 @@ impl<'scope, T: 'static> ReadGuard<'scope, T> {
 		Some(Self { store, prop, value })
 	}
 }
-common_guard_impls!(ReadGuard);
+guard_common_impls!(ReadGuard);
 impl<T> Drop for ReadGuard<'_, T> {
 	fn drop(&mut self) {
 		self.prop.unref(false);
@@ -58,7 +59,7 @@ impl<'scope, T: 'static> MutGuard<'scope, T> {
 		Some(Self { store, prop, value })
 	}
 }
-common_guard_impls!(MutGuard);
+guard_common_impls!(MutGuard);
 impl<T> DerefMut for MutGuard<'_, T> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		self.value
@@ -70,3 +71,93 @@ impl<T> Drop for MutGuard<'_, T> {
 		self.store.dec_ref();
 	}
 }
+
+pub trait SignalBase<T: 'static> {
+	fn store(&self) -> &Store;
+	fn prop(&self) -> PropId<T>;
+}
+pub trait ReadableSignal<T: 'static>: SignalBase<T> {
+	fn peek(&self) -> ReadGuard<'_, T> {
+		self.store().peek(self.prop())
+	}
+	fn get(&self) -> ReadGuard<'_, T> {
+		self.store().get(self.prop())
+	}
+}
+pub trait WritableSignal<T: 'static>: SignalBase<T> {
+	fn set(&self, value: T) {
+		self.store().set(self.prop(), value)
+	}
+	fn update(&self, fun: impl FnOnce(&mut T)) {
+		fun(self.store().get_mut(self.prop()).deref_mut())
+	}
+	fn force_update(&self) {
+		self.store().force_update(self.prop())
+	}
+}
+
+macro_rules! signal_common_impl {
+	($type:ident) => {
+		impl<T> Debug for $type<'_, T> {
+			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+				write!(f, "{}({:#})", stringify!($type), self.prop)
+			}
+		}
+		impl<T> PartialEq for $type<'_, T> {
+			fn eq(&self, other: &Self) -> bool {
+				self.store == other.store && self.prop == self.prop
+			}
+		}
+		impl<T> Eq for $type<'_, T> {}
+		impl<T> Hash for $type<'_, T> {
+			fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+				(self.store as *const Store).hash(state);
+				self.prop.hash(state);
+			}
+		}
+		impl<T: 'static> SignalBase<T> for $type<'_, T> {
+			fn store(&self) -> &Store {
+				self.store
+			}
+			fn prop(&self) -> PropId<T> {
+				self.prop
+			}
+		}
+	};
+}
+
+#[derive(Clone, Copy)]
+pub struct Signal<'scope, T: 'static> {
+	pub(crate) store: &'scope Store,
+	pub(crate) prop: PropId<T>,
+}
+signal_common_impl!(Signal);
+impl<T: 'static> ReadableSignal<T> for Signal<'_, T> {}
+impl<T: 'static> WritableSignal<T> for Signal<'_, T> {}
+impl<'scope, T: 'static> Signal<'scope, T> {
+	pub fn get_mut(&self) -> MutGuard<'scope, T> {
+		self.store.get_mut(self.prop)
+	}
+	pub fn as_readonly(&self) -> ROSignal<'scope, T> {
+		ROSignal { store: self.store, prop: self.prop }
+	}
+	pub fn as_writeonly(&self) -> WOSignal<'scope, T> {
+		WOSignal { store: self.store, prop: self.prop }
+	}
+}
+
+#[derive(Clone, Copy)]
+pub struct ROSignal<'scope, T: 'static> {
+	pub(crate) store: &'scope Store,
+	pub(crate) prop: PropId<T>,
+}
+signal_common_impl!(ROSignal);
+impl<T: 'static> ReadableSignal<T> for ROSignal<'_, T> {}
+
+#[derive(Clone, Copy)]
+pub struct WOSignal<'scope, T: 'static> {
+	pub(crate) store: &'scope Store,
+	pub(crate) prop: PropId<T>,
+}
+signal_common_impl!(WOSignal);
+impl<T: 'static> WritableSignal<T> for WOSignal<'_, T> {}

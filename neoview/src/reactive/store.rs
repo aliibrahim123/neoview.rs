@@ -1,27 +1,15 @@
-use std::cell::{Cell, UnsafeCell};
+use std::{
+	cell::{Cell, UnsafeCell},
+	ptr,
+};
 
 use rustc_hash::FxHashMap;
 
 use crate::reactive::{
-	PropId, SlabId,
-	signal::{MutGuard, ReadGuard},
+	Error, PropId, SlabId,
+	signal::{MutGuard, ReadGuard, Signal},
 	slab::{Slab, SlabData},
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GetError {
-	Removed,
-	UnderMut,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MutError {
-	Removed,
-	LiveRefs,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Removed;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LiveRefs;
 
 #[derive(Debug)]
 pub struct Store {
@@ -38,6 +26,11 @@ impl Default for Store {
 		}
 	}
 }
+impl PartialEq for Store {
+	fn eq(&self, other: &Self) -> bool {
+		ptr::eq(self, other)
+	}
+}
 impl Store {
 	pub(crate) fn slabs(&self) -> &mut FxHashMap<SlabId, SlabData> {
 		unsafe { &mut *self.slabs.get() }
@@ -50,54 +43,119 @@ impl Store {
 		self.ref_count.update(|c| c - 1);
 	}
 
-	pub fn add_slab(&self) -> Result<Slab<'_>, LiveRefs> {
+	pub fn add_slab(&self) -> Result<Slab<'_>, Error> {
 		if self.ref_count.get() != 0 {
-			return Err(LiveRefs);
+			return Err(Error::LiveRefs);
 		}
 		let id = self.cur_slab.get();
 		self.slabs().insert(id, SlabData::new(id));
 		self.cur_slab.set(SlabId(id.0 + 1));
 		Ok(Slab { store: self, id })
 	}
-	pub fn slab(&self, id: SlabId) -> Result<Slab<'_>, Removed> {
-		if self.slabs().contains_key(&id) { Ok(Slab { store: self, id }) } else { Err(Removed) }
+	pub fn slab(&self, id: SlabId) -> Result<Slab<'_>, Error> {
+		if self.slabs().contains_key(&id) {
+			Ok(Slab { store: self, id })
+		} else {
+			Err(Error::Removed)
+		}
+	}
+	pub fn remove_slab(&self, id: SlabId) -> Result<(), Error> {
+		if self.ref_count.get() != 0 {
+			return Err(Error::LiveRefs);
+		}
+		if self.slabs().remove(&id).is_none() {
+			return Err(Error::Removed);
+		}
+		Ok(())
+	}
+
+	pub fn try_peek<'store: 'scope, 'scope, T: 'static>(
+		&'store self, id: PropId<T>,
+	) -> Result<ReadGuard<'scope, T>, Error> {
+		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(Error::Removed) };
+		ReadGuard::new(self, slab.get_prop(id)).ok_or(Error::UnderMut)
+	}
+	pub fn peek<'store: 'scope, 'scope, T: 'static>(
+		&'store self, id: PropId<T>,
+	) -> ReadGuard<'scope, T> {
+		match self.try_peek(id) {
+			Ok(guard) => guard,
+			Err(Error::Removed) => panic!("getting removed property ({id})"),
+			Err(Error::UnderMut) => panic!("getting property ({id}) under mutation"),
+			_ => unreachable!(),
+		}
 	}
 
 	pub fn try_get<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> Result<ReadGuard<'scope, T>, GetError> {
-		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(GetError::Removed) };
-		ReadGuard::new(self, slab.get_prop(id)).ok_or(GetError::UnderMut)
+	) -> Result<ReadGuard<'scope, T>, Error> {
+		self.try_peek(id)
 	}
 	pub fn get<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> ReadGuard<'scope, T> {
-		match self.try_get(id) {
-			Ok(guard) => guard,
-			Err(GetError::Removed) => panic!("getting removed property ({id})"),
-			Err(GetError::UnderMut) => panic!("getting property under mutation ({id})"),
-		}
+		self.peek(id)
 	}
 
 	pub fn try_get_mut<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> Result<MutGuard<'scope, T>, MutError> {
-		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(MutError::Removed) };
-		MutGuard::new(self, slab.get_prop(id)).ok_or(MutError::LiveRefs)
+	) -> Result<MutGuard<'scope, T>, Error> {
+		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(Error::Removed) };
+		MutGuard::new(self, slab.get_prop(id)).ok_or(Error::LiveRefs)
 	}
 	pub fn get_mut<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> MutGuard<'scope, T> {
 		match self.try_get_mut(id) {
 			Ok(guard) => guard,
-			Err(MutError::Removed) => panic!("getting removed property ({id})"),
-			Err(MutError::LiveRefs) => panic!("mutating property ({id}) having live references"),
+			Err(Error::Removed) => panic!("getting removed property ({id})"),
+			Err(Error::LiveRefs) => panic!("mutating property ({id}) having live references"),
+			_ => unreachable!(),
 		}
 	}
 
-	pub fn try_set<T: 'static>(&self, id: PropId<T>, value: T) -> Result<(), Removed> {
-		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(Removed) };
+	pub fn try_set<T: 'static>(&self, id: PropId<T>, value: T) -> Result<(), Error> {
+		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(Error::Removed) };
 		slab.get_prop(id).set(value);
 		Ok(())
 	}
+	pub fn set<T: 'static>(&self, id: PropId<T>, value: T) {
+		match self.try_set(id, value) {
+			Ok(()) => (),
+			Err(Error::Removed) => panic!("setting removed property ({id})"),
+			_ => unreachable!(),
+		}
+	}
+
+	pub fn revive<Tuple: IdTuple>(&self, ids: Tuple) -> Tuple::Signals<'_> {
+		Tuple::revive(self, ids)
+	}
+
+	pub fn force_update<T: 'static>(&self, id: PropId<T>) {
+		todo!()
+	}
 }
+
+pub trait IdTuple {
+	type Signals<'scope>;
+	fn revive(store: &Store, ids: Self) -> Self::Signals<'_>;
+}
+macro_rules! id_tuple {
+	[$($item:ident : $ind:tt),*] => {
+		impl<$($item: 'static),*> IdTuple for ($(PropId<$item>),*,) {
+			type Signals<'scope> = ($(Signal<'scope, $item>),*,);
+			fn revive(store: &Store, ids: Self) -> Self::Signals<'_> {
+				($(Signal { store, prop: ids.$ind }),*,)
+			}
+		}
+	};
+
+}
+id_tuple![A: 0];
+id_tuple![A: 0, B: 1];
+id_tuple![A: 0, B: 1, C: 2];
+id_tuple![A: 0, B: 1, C: 2, D: 3];
+id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4];
+id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4, F: 5];
+id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6];
+id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6, H: 7];

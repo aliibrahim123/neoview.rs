@@ -72,7 +72,7 @@ impl PropIndex {
 }
 impl Display for PropIndex {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if f.alternate() { write!(f, "{:#4x}", self.0) } else { write!(f, "{:4x}", self.0) }
+		if f.alternate() { write!(f, "{:#04x}", self.0) } else { write!(f, "{:04x}", self.0) }
 	}
 }
 impl Debug for PropIndex {
@@ -90,7 +90,7 @@ impl SlabId {
 }
 impl Display for SlabId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if f.alternate() { write!(f, "{:#4x}", self.0) } else { write!(f, "{:4x}", self.0) }
+		if f.alternate() { write!(f, "{:#04x}", self.0) } else { write!(f, "{:04x}", self.0) }
 	}
 }
 impl Debug for SlabId {
@@ -99,6 +99,7 @@ impl Debug for SlabId {
 	}
 }
 
+#[derive(Debug)]
 pub struct Prop {
 	value: UnsafeCell<Box<dyn Any>>,
 	pending_value: UnsafeCell<Option<Box<dyn Any>>>,
@@ -151,10 +152,5 @@ impl Prop {
 		{
 			*unsafe { &mut *self.value.get() } = pending;
 		}
-	}
-}
-impl Debug for Prop {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "Prop")
 	}
 }

@@ -1,6 +1,10 @@
 use std::cell::UnsafeCell;
 
-use crate::reactive::{PropId, SlabId, Store, prop::Prop, store::Removed};
+use crate::reactive::{
+	Error, PropId, SlabId, Store,
+	prop::Prop,
+	signal::{ROSignal, Signal, WOSignal},
+};
 
 pub struct Slab<'store> {
 	pub(crate) store: &'store Store,
@@ -13,14 +17,35 @@ impl<'store> Slab<'store> {
 	pub fn id(&self) -> SlabId {
 		self.id
 	}
-	pub fn add_prop<T: 'static>(&self, value: T) -> Result<PropId<T>, Removed> {
+
+	pub fn add_prop<T: 'static>(&self, value: T) -> Result<PropId<T>, Error> {
 		if self.store().ref_count.get() != 0 {
-			return Err(Removed);
+			return Err(Error::LiveRefs);
 		}
 		Ok(self.store.slabs()[&self.id].add_prop(value))
 	}
+
+	pub fn signal<'scope, T: 'static>(&'scope self, value: T) -> Signal<'scope, T> {
+		let Ok(id) = self.add_prop(value) else {
+			panic!("can not do a structural change while there is live references");
+		};
+		Signal { store: self.store, prop: id }
+	}
+	pub fn ro_signal<'scope, T: 'static>(&'scope self, value: T) -> ROSignal<'scope, T> {
+		let Ok(id) = self.add_prop(value) else {
+			panic!("can not do a structural change while there is live references");
+		};
+		ROSignal { store: self.store, prop: id }
+	}
+	pub fn wo_signal<'scope, T: 'static>(&'scope self, value: T) -> WOSignal<'scope, T> {
+		let Ok(id) = self.add_prop(value) else {
+			panic!("can not do a structural change while there is live references");
+		};
+		WOSignal { store: self.store, prop: id }
+	}
 }
 
+#[derive(Debug)]
 pub struct SlabData {
 	id: SlabId,
 	props: UnsafeCell<Vec<Prop>>,
