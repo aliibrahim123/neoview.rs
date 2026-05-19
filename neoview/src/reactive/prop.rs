@@ -12,6 +12,7 @@ new_key_type! {
 	pub struct ItemId;
 }
 
+#[repr(transparent)]
 pub struct PropId<T: 'static>(pub(crate) ItemId, PhantomData<T>);
 impl<T> PropId<T> {
 	pub fn new(id: ItemId) -> Self {
@@ -20,7 +21,7 @@ impl<T> PropId<T> {
 	pub fn value(&self) -> u64 {
 		self.0.data().as_ffi()
 	}
-	pub(crate) fn erase_type(&self) -> PropId<()> {
+	pub fn erase_type(&self) -> PropId<()> {
 		PropId(self.0, PhantomData)
 	}
 }

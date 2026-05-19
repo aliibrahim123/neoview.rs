@@ -1,18 +1,24 @@
 use std::{
 	cell::{Cell, RefCell, UnsafeCell},
+	mem::transmute,
 	ops::DerefMut,
+	panic::Location,
 	ptr,
 };
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 
-use crate::reactive::{
-	Error, PropId, ROSignal, SlabId, WOSignal,
-	prop::{ItemId, Prop, PropStatus},
-	signal::{MutGuard, ReadGuard, Signal},
-	slab::{Slab, SlabData},
-	struct_change_while_life_refs,
+use crate::{
+	context::{Context, VoidContext},
+	reactive::{
+		Error, PropId, ROSignal, SlabId, WOSignal,
+		prop::{ItemId, Prop, PropStatus},
+		signal::{MutGuard, ReadGuard, Signal},
+		slab::{Slab, SlabData},
+		struct_change_while_life_refs,
+		updater::Effect,
+	},
 };
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
@@ -21,31 +27,45 @@ pub struct TrackResult {
 	pub written: Vec<PropId<()>>,
 }
 
+type CtxGetter<Ctx> = for<'a> fn(<Ctx as Context>::Id, &'a ()) -> &'a Ctx;
+
 #[derive(Debug)]
-pub struct Store {
+pub struct Store<Ctx: Context = VoidContext> {
 	pub(crate) props: UnsafeCell<SlotMap<ItemId, Prop>>,
+	pub(crate) effects: RefCell<SlotMap<ItemId, Effect<Ctx>>>,
+
 	pub(crate) slabs: RefCell<FxHashMap<SlabId, SlabData>>,
 	next_slab: Cell<SlabId>,
+
 	pub(crate) ref_count: Cell<u64>,
 	tracking: RefCell<Option<TrackResult>>,
+
+	ctx_id: Ctx::Id,
+	ctx_getter: CtxGetter<Ctx>,
 }
-impl Default for Store {
+impl Default for Store<VoidContext> {
 	fn default() -> Self {
-		Store {
-			props: UnsafeCell::new(SlotMap::with_key()),
-			slabs: RefCell::new(FxHashMap::default()),
-			ref_count: Cell::new(0),
-			next_slab: Cell::new(SlabId(0)),
-			tracking: RefCell::new(None),
-		}
+		Store::new((), VoidContext::get_by_id)
 	}
 }
-impl PartialEq for Store {
+impl<Ctx: Context> PartialEq for Store<Ctx> {
 	fn eq(&self, other: &Self) -> bool {
 		ptr::eq(self, other)
 	}
 }
-impl Store {
+impl<Ctx: Context> Store<Ctx> {
+	fn new(ctx_id: Ctx::Id, ctx_getter: CtxGetter<Ctx>) -> Self {
+		Store {
+			ref_count: Cell::new(0),
+			props: UnsafeCell::new(SlotMap::with_key()),
+			slabs: RefCell::new(FxHashMap::default()),
+			next_slab: Cell::new(SlabId(0)),
+			effects: RefCell::new(SlotMap::with_key()),
+			tracking: RefCell::new(None),
+			ctx_id,
+			ctx_getter,
+		}
+	}
 	pub(crate) fn props(&self) -> &SlotMap<ItemId, Prop> {
 		unsafe { &*self.props.get() }
 	}
@@ -60,7 +80,7 @@ impl Store {
 		self.ref_count.update(|c| c - 1);
 	}
 
-	pub fn add_slab(&self) -> Result<Slab<'_>, Error> {
+	pub fn add_slab(&self) -> Result<Slab<'_, Ctx>, Error> {
 		if self.ref_count.get() != 0 {
 			return Err(Error::LiveRefs);
 		}
@@ -69,7 +89,7 @@ impl Store {
 		self.next_slab.set(SlabId(id.0 + 1));
 		Ok(Slab { store: self, id })
 	}
-	pub fn new_slab(&self, id: SlabId) -> Result<Slab<'_>, Error> {
+	pub fn slab(&self, id: SlabId) -> Result<Slab<'_, Ctx>, Error> {
 		if !self.slabs.borrow().contains_key(&id) {
 			return Err(Error::Removed);
 		}
@@ -85,6 +105,10 @@ impl Store {
 		for id in &slab.props {
 			props.remove(*id);
 		}
+		let mut effects = self.effects.borrow_mut();
+		for id in &slab.effects {
+			effects.remove(*id);
+		}
 		slabs.remove(&id);
 		Ok(())
 	}
@@ -94,12 +118,12 @@ impl Store {
 	}
 	pub fn try_peek<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> Result<ReadGuard<'scope, T>, Error> {
+	) -> Result<ReadGuard<'scope, T, Ctx>, Error> {
 		ReadGuard::new(self, self.get_prop(id.0)?).ok_or(Error::UnderMut)
 	}
 	pub fn peek<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> ReadGuard<'scope, T> {
+	) -> ReadGuard<'scope, T, Ctx> {
 		match self.try_peek(id) {
 			Ok(guard) => guard,
 			Err(Error::Removed) => panic!("getting removed property ({id})"),
@@ -110,21 +134,21 @@ impl Store {
 
 	pub fn try_get<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> Result<ReadGuard<'scope, T>, Error> {
+	) -> Result<ReadGuard<'scope, T, Ctx>, Error> {
 		let guard = self.try_peek(id)?;
 		self.track_read(id);
 		Ok(guard)
 	}
 	pub fn get<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> ReadGuard<'scope, T> {
+	) -> ReadGuard<'scope, T, Ctx> {
 		self.track_read(id);
 		self.peek(id)
 	}
 
 	pub fn try_get_mut<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> Result<MutGuard<'scope, T>, Error> {
+	) -> Result<MutGuard<'scope, T, Ctx>, Error> {
 		let Some(guard) = MutGuard::new(self, self.get_prop(id.0)?) else {
 			return Err(Error::LiveRefs);
 		};
@@ -133,7 +157,7 @@ impl Store {
 	}
 	pub fn get_mut<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
-	) -> MutGuard<'scope, T> {
+	) -> MutGuard<'scope, T, Ctx> {
 		match self.try_get_mut(id) {
 			Ok(guard) => guard,
 			Err(Error::Removed) => panic!("getting removed property ({id})"),
@@ -167,24 +191,62 @@ impl Store {
 		id
 	}
 
-	pub fn signal<'store: 'scope, 'scope, T: 'static>(&'store self, value: T) -> Signal<'scope, T> {
+	pub fn signal<'store: 'scope, 'scope, T: 'static>(
+		&'store self, value: T,
+	) -> Signal<'scope, T, Ctx> {
 		Signal { store: self, prop: self.add_prop_panicing(value) }
 	}
 	pub fn ro_signal<'store: 'scope, 'scope, T: 'static>(
 		&'store self, value: T,
-	) -> ROSignal<'scope, T> {
+	) -> ROSignal<'scope, T, Ctx> {
 		ROSignal { store: self, prop: self.add_prop_panicing(value) }
 	}
 	pub fn wo_signal<'store: 'scope, 'scope, T: 'static>(
 		&'store self, value: T,
-	) -> WOSignal<'scope, T> {
+	) -> WOSignal<'scope, T, Ctx> {
 		WOSignal { store: self, prop: self.add_prop_panicing(value) }
 	}
-	pub fn revive<Tuple: IdTuple>(&self, ids: Tuple) -> Tuple::Signals<'_> {
+	pub fn revive<Tuple: IdTuple<Ctx>>(&self, ids: Tuple) -> Tuple::Signals<'_> {
 		Tuple::revive(self, ids)
 	}
-	pub fn try_revive<T: 'static>(&self, id: PropId<T>) -> Option<Signal<'_, T>> {
+	pub fn try_revive<T: 'static>(&self, id: PropId<T>) -> Option<Signal<'_, T, Ctx>> {
 		self.props().contains_key(id.0).then(|| Signal { store: self, prop: id })
+	}
+
+	pub(crate) fn add_effect<'store>(
+		&'store self, mut fun: impl FnMut(&Ctx) + 'store, loc: &'static Location,
+	) -> ItemId {
+		let ctx = (self.ctx_getter)(self.ctx_id, &());
+		self.start_track().unwrap();
+		fun(ctx);
+		let TrackResult { read, written } = self.end_track().unwrap();
+
+		self.add_effect_manual(read, written, fun, loc)
+	}
+	pub(crate) fn add_effect_manual<'store>(
+		&'store self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+		fun: impl FnMut(&Ctx) + 'store, loc: &'static Location,
+	) -> ItemId {
+		let fun = Box::new(fun);
+		let fun = unsafe {
+			transmute::<Box<dyn FnMut(&Ctx) + 'store>, Box<dyn FnMut(&Ctx) + 'static>>(fun)
+		};
+
+		let write = write.into_iter().map(|id| id.0).collect();
+		let read = read.into_iter().map(|id| id.0).collect();
+
+		self.effects.borrow_mut().insert(Effect { fun, loc, write, read })
+	}
+
+	#[track_caller]
+	pub fn effect<'store>(&'store self, fun: impl FnMut(&Ctx) + 'store) {
+		self.add_effect(fun, Location::caller());
+	}
+	#[track_caller]
+	pub fn effect_manual<'store>(
+		&'store self, read: Vec<PropId<()>>, write: Vec<PropId<()>>, fun: impl FnMut(&Ctx) + 'store,
+	) {
+		self.add_effect_manual(read, write, fun, Location::caller());
 	}
 
 	pub fn status_of<T: 'static>(&self, id: PropId<T>) -> PropStatus {
@@ -205,7 +267,7 @@ impl Store {
 		self.tracking.replace(Some(TrackResult::default()));
 		Ok(())
 	}
-	pub fn stop_track(&self) -> Result<TrackResult, Error> {
+	pub fn end_track(&self) -> Result<TrackResult, Error> {
 		self.tracking.take().ok_or(Error::NotTracking)
 	}
 	pub fn track_read<T: 'static>(&self, id: PropId<T>) {
@@ -228,15 +290,15 @@ impl Store {
 	}
 }
 
-pub trait IdTuple {
+pub trait IdTuple<Ctx: Context> {
 	type Signals<'scope>;
-	fn revive(store: &Store, ids: Self) -> Self::Signals<'_>;
+	fn revive(store: &Store<Ctx>, ids: Self) -> Self::Signals<'_>;
 }
 macro_rules! id_tuple {
 	[$($item:ident : $ind:tt),*] => {
-		impl<$($item: 'static),*> IdTuple for ($(PropId<$item>),*,) {
-			type Signals<'scope> = ($(Signal<'scope, $item>),*,);
-			fn revive(store: &Store, ids: Self) -> Self::Signals<'_> {
+		impl<$($item: 'static),*, Ctx: Context> IdTuple<Ctx> for ($(PropId<$item>),*,) {
+			type Signals<'scope> = ($(Signal<'scope, $item, Ctx>),*,);
+			fn revive(store: &Store<Ctx>, ids: Self) -> Self::Signals<'_> {
 				($(Signal { store, prop: ids.$ind }),*,)
 			}
 		}
