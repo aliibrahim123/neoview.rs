@@ -16,4 +16,6 @@ pub enum Error {
 	Removed,
 	LiveRefs,
 	UnderMut,
+	Tracking,
+	NotTracking,
 }

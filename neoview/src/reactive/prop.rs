@@ -23,6 +23,9 @@ impl<T> PropId<T> {
 	pub(crate) fn split(&self) -> (SlabId, PropIndex) {
 		(self.slab(), self.prop_index())
 	}
+	pub(crate) fn erase_type(&self) -> PropId<()> {
+		PropId(self.0, PhantomData)
+	}
 }
 impl<T> Display for PropId<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -152,5 +155,30 @@ impl Prop {
 		{
 			*unsafe { &mut *self.value.get() } = pending;
 		}
+	}
+	pub fn status(&self) -> PropStatus {
+		if self.ref_count.get() == 0 {
+			PropStatus::Idle
+		} else if self.in_mut.get() {
+			PropStatus::Mut
+		} else {
+			PropStatus::Ref
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PropStatus {
+	Idle,
+	Ref,
+	Mut,
+	Removed,
+}
+impl PropStatus {
+	pub fn is_removed(&self) -> bool {
+		matches!(self, PropStatus::Removed)
+	}
+	pub fn is_used(&self) -> bool {
+		matches!(self, PropStatus::Ref | PropStatus::Mut)
 	}
 }

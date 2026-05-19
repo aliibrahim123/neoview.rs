@@ -4,7 +4,10 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use crate::reactive::{PropId, Store, prop::Prop};
+use crate::reactive::{
+	PropId, Store,
+	prop::{Prop, PropStatus},
+};
 
 macro_rules! guard_common_impls {
 	($guard:ident) => {
@@ -75,6 +78,9 @@ impl<T> Drop for MutGuard<'_, T> {
 pub trait SignalBase<T: 'static> {
 	fn store(&self) -> &Store;
 	fn prop(&self) -> PropId<T>;
+	fn status(&self) -> PropStatus {
+		self.store().satus_of(self.prop())
+	}
 }
 pub trait ReadableSignal<T: 'static>: SignalBase<T> {
 	fn peek(&self) -> ReadGuard<'_, T> {
@@ -83,6 +89,9 @@ pub trait ReadableSignal<T: 'static>: SignalBase<T> {
 	fn get(&self) -> ReadGuard<'_, T> {
 		self.store().get(self.prop())
 	}
+	fn track_read(&self) {
+		self.store().track_read(self.prop());
+	}
 }
 pub trait WritableSignal<T: 'static>: SignalBase<T> {
 	fn set(&self, value: T) {
@@ -90,6 +99,9 @@ pub trait WritableSignal<T: 'static>: SignalBase<T> {
 	}
 	fn update(&self, fun: impl FnOnce(&mut T)) {
 		fun(self.store().get_mut(self.prop()).deref_mut())
+	}
+	fn track_write(&self) {
+		self.store().track_write(self.prop());
 	}
 	fn force_update(&self) {
 		self.store().force_update(self.prop())
