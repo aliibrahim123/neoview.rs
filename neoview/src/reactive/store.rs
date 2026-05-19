@@ -5,10 +5,11 @@ use std::{
 };
 
 use rustc_hash::FxHashMap;
+use slotmap::SlotMap;
 
 use crate::reactive::{
-	Error, PropId, PropIndex, ROSignal, SlabId, WOSignal,
-	prop::PropStatus,
+	Error, PropId, ROSignal, SlabId, WOSignal,
+	prop::{ItemId, Prop, PropStatus},
 	signal::{MutGuard, ReadGuard, Signal},
 	slab::{Slab, SlabData},
 	struct_change_while_life_refs,
@@ -22,22 +23,20 @@ pub struct TrackResult {
 
 #[derive(Debug)]
 pub struct Store {
-	slabs: UnsafeCell<FxHashMap<SlabId, SlabData>>,
-	pub(crate) ref_count: Cell<u64>,
+	pub(crate) props: UnsafeCell<SlotMap<ItemId, Prop>>,
+	pub(crate) slabs: RefCell<FxHashMap<SlabId, SlabData>>,
 	next_slab: Cell<SlabId>,
+	pub(crate) ref_count: Cell<u64>,
 	tracking: RefCell<Option<TrackResult>>,
-	cur_global_slab: Cell<SlabId>,
 }
 impl Default for Store {
 	fn default() -> Self {
-		let mut slabs = FxHashMap::default();
-		slabs.insert(SlabId(0), SlabData::new(SlabId(0), true));
 		Store {
-			slabs: UnsafeCell::new(slabs),
+			props: UnsafeCell::new(SlotMap::with_key()),
+			slabs: RefCell::new(FxHashMap::default()),
 			ref_count: Cell::new(0),
-			next_slab: Cell::new(SlabId(1)),
+			next_slab: Cell::new(SlabId(0)),
 			tracking: RefCell::new(None),
-			cur_global_slab: Cell::new(SlabId(0)),
 		}
 	}
 }
@@ -47,8 +46,11 @@ impl PartialEq for Store {
 	}
 }
 impl Store {
-	pub(crate) fn slabs(&self) -> &mut FxHashMap<SlabId, SlabData> {
-		unsafe { &mut *self.slabs.get() }
+	pub(crate) fn props(&self) -> &SlotMap<ItemId, Prop> {
+		unsafe { &*self.props.get() }
+	}
+	pub(crate) fn props_mut(&self) -> &mut SlotMap<ItemId, Prop> {
+		unsafe { &mut *self.props.get() }
 	}
 
 	pub(crate) fn inc_ref(&self) {
@@ -58,52 +60,42 @@ impl Store {
 		self.ref_count.update(|c| c - 1);
 	}
 
-	fn _add_slab(&self, global: bool) -> Result<SlabId, Error> {
+	pub fn add_slab(&self) -> Result<Slab<'_>, Error> {
 		if self.ref_count.get() != 0 {
 			return Err(Error::LiveRefs);
 		}
 		let id = self.next_slab.get();
-		self.slabs().insert(id, SlabData::new(id, global));
+		self.slabs.borrow_mut().insert(id, SlabData::default());
 		self.next_slab.set(SlabId(id.0 + 1));
-		Ok(id)
-	}
-	pub fn add_slab(&self) -> Result<Slab<'_>, Error> {
-		Ok(Slab { store: self, id: self._add_slab(false)? })
+		Ok(Slab { store: self, id })
 	}
 	pub fn new_slab(&self, id: SlabId) -> Result<Slab<'_>, Error> {
-		if let Some(slab) = self.slabs().get(&id) {
-			if slab.global {
-				panic!("accessing global slab ({id})");
-			}
-			Ok(Slab { store: self, id })
-		} else {
-			Err(Error::Removed)
+		if !self.slabs.borrow().contains_key(&id) {
+			return Err(Error::Removed);
 		}
+		Ok(Slab { store: self, id })
 	}
 	pub fn remove_slab(&self, id: SlabId) -> Result<(), Error> {
 		if self.ref_count.get() != 0 {
 			return Err(Error::LiveRefs);
 		}
-		if self.slabs().remove(&id).is_none() {
-			return Err(Error::Removed);
+		let mut slabs = self.slabs.borrow_mut();
+		let slab = slabs.get(&id).ok_or(Error::Removed)?;
+		let props = self.props_mut();
+		for id in &slab.props {
+			props.remove(*id);
 		}
+		slabs.remove(&id);
 		Ok(())
 	}
 
-	fn cur_global_slab(&self) -> Result<Slab<'_>, Error> {
-		let mut slab = self.cur_global_slab.get();
-		if self.slabs()[&slab].props().len() == PropIndex::MAX {
-			slab = self._add_slab(true)?;
-			self.cur_global_slab.set(slab);
-		};
-		Ok(Slab { store: self, id: slab })
+	fn get_prop(&self, id: ItemId) -> Result<&Prop, Error> {
+		self.props().get(id).ok_or(Error::Removed)
 	}
-
 	pub fn try_peek<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> Result<ReadGuard<'scope, T>, Error> {
-		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(Error::Removed) };
-		ReadGuard::new(self, slab.get_prop(id)).ok_or(Error::UnderMut)
+		ReadGuard::new(self, self.get_prop(id.0)?).ok_or(Error::UnderMut)
 	}
 	pub fn peek<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
@@ -133,8 +125,7 @@ impl Store {
 	pub fn try_get_mut<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> Result<MutGuard<'scope, T>, Error> {
-		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(Error::Removed) };
-		let Some(guard) = MutGuard::new(self, slab.get_prop(id)) else {
+		let Some(guard) = MutGuard::new(self, self.get_prop(id.0)?) else {
 			return Err(Error::LiveRefs);
 		};
 		self.track_write(id);
@@ -152,8 +143,7 @@ impl Store {
 	}
 
 	pub fn try_set<T: 'static>(&self, id: PropId<T>, value: T) -> Result<(), Error> {
-		let Some(slab) = self.slabs().get(&id.slab()) else { return Err(Error::Removed) };
-		slab.get_prop(id).set(value);
+		self.get_prop(id.0)?.set(value);
 		self.track_write(id);
 		Ok(())
 	}
@@ -166,35 +156,43 @@ impl Store {
 	}
 
 	pub fn add_prop<T: 'static>(&self, value: T) -> Result<PropId<T>, Error> {
-		self.cur_global_slab()?.add_prop(value)
+		if self.ref_count.get() != 0 {
+			return Err(Error::LiveRefs);
+		}
+		let id = self.props_mut().insert(Prop::new(value));
+		Ok(PropId::new(id))
 	}
+	fn add_prop_panicing<T: 'static>(&self, value: T) -> PropId<T> {
+		let Ok(id) = self.add_prop(value) else { struct_change_while_life_refs() };
+		id
+	}
+
 	pub fn signal<'store: 'scope, 'scope, T: 'static>(&'store self, value: T) -> Signal<'scope, T> {
-		let Ok(slab) = self.cur_global_slab() else { struct_change_while_life_refs() };
-		Signal { store: self, prop: slab.add_prop(value).unwrap() }
+		Signal { store: self, prop: self.add_prop_panicing(value) }
 	}
 	pub fn ro_signal<'store: 'scope, 'scope, T: 'static>(
 		&'store self, value: T,
 	) -> ROSignal<'scope, T> {
-		let Ok(slab) = self.cur_global_slab() else { struct_change_while_life_refs() };
-		ROSignal { store: self, prop: slab.add_prop(value).unwrap() }
+		ROSignal { store: self, prop: self.add_prop_panicing(value) }
 	}
 	pub fn wo_signal<'store: 'scope, 'scope, T: 'static>(
 		&'store self, value: T,
 	) -> WOSignal<'scope, T> {
-		let Ok(slab) = self.cur_global_slab() else { struct_change_while_life_refs() };
-		WOSignal { store: self, prop: slab.add_prop(value).unwrap() }
+		WOSignal { store: self, prop: self.add_prop_panicing(value) }
+	}
+	pub fn revive<Tuple: IdTuple>(&self, ids: Tuple) -> Tuple::Signals<'_> {
+		Tuple::revive(self, ids)
+	}
+	pub fn try_revive<T: 'static>(&self, id: PropId<T>) -> Option<Signal<'_, T>> {
+		self.props().contains_key(id.0).then(|| Signal { store: self, prop: id })
 	}
 
-	pub fn satus_of<T: 'static>(&self, id: PropId<T>) -> PropStatus {
-		let Some(slab) = self.slabs().get(&id.slab()) else { return PropStatus::Removed };
-		slab.get_prop(id).status()
+	pub fn status_of<T: 'static>(&self, id: PropId<T>) -> PropStatus {
+		let Ok(prop) = self.get_prop(id.0) else { return PropStatus::Removed };
+		prop.status()
 	}
 	pub fn has_live_refs(&self) -> bool {
 		self.ref_count.get() != 0
-	}
-
-	pub fn revive<Tuple: IdTuple>(&self, ids: Tuple) -> Tuple::Signals<'_> {
-		Tuple::revive(self, ids)
 	}
 
 	pub fn is_tracking(&self) -> bool {
@@ -212,12 +210,16 @@ impl Store {
 	}
 	pub fn track_read<T: 'static>(&self, id: PropId<T>) {
 		if let Some(tracking) = self.tracking.borrow_mut().deref_mut() {
-			tracking.read.push(id.erase_type());
+			if !tracking.read.contains(&id.erase_type()) {
+				tracking.read.push(id.erase_type());
+			}
 		}
 	}
 	pub fn track_write<T: 'static>(&self, id: PropId<T>) {
 		if let Some(tracking) = self.tracking.borrow_mut().deref_mut() {
-			tracking.written.push(id.erase_type());
+			if !tracking.written.contains(&id.erase_type()) {
+				tracking.written.push(id.erase_type());
+			}
 		}
 	}
 

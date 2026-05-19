@@ -1,5 +1,5 @@
 use std::{
-	fmt::{Debug, Display, Write},
+	fmt::{Debug, Display},
 	hash::Hash,
 	ops::{Deref, DerefMut},
 };
@@ -79,7 +79,7 @@ pub trait SignalBase<T: 'static> {
 	fn store(&self) -> &Store;
 	fn prop(&self) -> PropId<T>;
 	fn status(&self) -> PropStatus {
-		self.store().satus_of(self.prop())
+		self.store().status_of(self.prop())
 	}
 }
 pub trait ReadableSignal<T: 'static>: SignalBase<T> {

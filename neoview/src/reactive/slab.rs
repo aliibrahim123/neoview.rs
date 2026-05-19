@@ -1,8 +1,8 @@
-use std::cell::UnsafeCell;
+use std::cell::RefMut;
 
 use crate::reactive::{
-	Error, PropId, PropIndex, SlabId, Store,
-	prop::Prop,
+	Error, PropId, SlabId, Store,
+	prop::ItemId,
 	signal::{ROSignal, Signal, WOSignal},
 	struct_change_while_life_refs,
 };
@@ -18,24 +18,18 @@ impl<'store> Slab<'store> {
 	pub fn id(&self) -> SlabId {
 		self.id
 	}
-
+	fn slab(&self) -> RefMut<'_, SlabData> {
+		let slabs = self.store().slabs.borrow_mut();
+		RefMut::map(slabs, |slabs| slabs.get_mut(&self.id).unwrap())
+	}
 	pub fn add_prop<T: 'static>(&self, value: T) -> Result<PropId<T>, Error> {
-		if self.store().ref_count.get() != 0 {
-			return Err(Error::LiveRefs);
-		}
-		let slab = self.store.slabs().get_mut(&self.id).unwrap();
-		if slab.props().len() == PropIndex::MAX {
-			return Err(Error::OverCapacity);
-		}
-		Ok(slab.add_prop(value))
+		let id = self.store().add_prop(value)?;
+		self.slab().props.push(id.0);
+		Ok(id)
 	}
 	fn add_prop_panicing<T: 'static>(&self, value: T) -> PropId<T> {
-		match self.add_prop(value) {
-			Ok(id) => id,
-			Err(Error::LiveRefs) => struct_change_while_life_refs(),
-			Err(Error::OverCapacity) => panic!("slab ({}) is full", self.id),
-			_ => unreachable!(),
-		}
+		let Ok(id) = self.add_prop(value) else { struct_change_while_life_refs() };
+		id
 	}
 
 	pub fn signal<'scope, T: 'static>(&'scope self, value: T) -> Signal<'scope, T> {
@@ -52,26 +46,7 @@ impl<'store> Slab<'store> {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SlabData {
-	id: SlabId,
-	props: UnsafeCell<Vec<Prop>>,
-	pub global: bool,
-}
-impl SlabData {
-	pub fn new(id: SlabId, global: bool) -> Self {
-		Self { id, props: UnsafeCell::new(Vec::new()), global }
-	}
-	pub fn props(&self) -> &mut Vec<Prop> {
-		unsafe { &mut *self.props.get() }
-	}
-	pub fn add_prop<T: 'static>(&self, value: T) -> PropId<T> {
-		let props = self.props();
-		let ind = props.len();
-		props.push(Prop::new(value));
-		PropId::new(self.id.value(), ind as u16)
-	}
-	pub fn get_prop<T: 'static>(&self, id: PropId<T>) -> &Prop {
-		&self.props()[id.prop_index().value() as usize]
-	}
+	pub props: Vec<ItemId>,
 }

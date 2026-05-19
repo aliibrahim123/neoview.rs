@@ -3,7 +3,7 @@ pub(crate) mod signal;
 pub(crate) mod slab;
 pub(crate) mod store;
 pub use {
-	prop::{PropId, PropIndex, SlabId},
+	prop::{PropId, PropStatus, SlabId},
 	signal::{
 		MutGuard, ROSignal, ReadGuard, ReadableSignal, Signal, SignalBase, WOSignal, WritableSignal,
 	},

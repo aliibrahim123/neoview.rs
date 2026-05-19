@@ -1,27 +1,24 @@
 use std::{
 	any::Any,
 	cell::{Cell, UnsafeCell},
-	fmt::{Debug, Display},
+	fmt::{Debug, Display, LowerHex},
 	hash::Hash,
 	marker::PhantomData,
 };
 
-pub struct PropId<T: 'static>(u64, PhantomData<T>);
+use slotmap::{Key, new_key_type};
+
+new_key_type! {
+	pub struct ItemId;
+}
+
+pub struct PropId<T: 'static>(pub(crate) ItemId, PhantomData<T>);
 impl<T> PropId<T> {
-	pub(crate) fn new(slab: u64, prop: u16) -> Self {
-		Self(slab << 16 | prop as u64, PhantomData)
+	pub fn new(id: ItemId) -> Self {
+		Self(id, PhantomData)
 	}
 	pub fn value(&self) -> u64 {
-		self.0
-	}
-	pub fn slab(&self) -> SlabId {
-		SlabId(self.0 >> 16)
-	}
-	pub fn prop_index(&self) -> PropIndex {
-		PropIndex((self.0 & 0xFFFF) as u16)
-	}
-	pub(crate) fn split(&self) -> (SlabId, PropIndex) {
-		(self.slab(), self.prop_index())
+		self.0.data().as_ffi()
 	}
 	pub(crate) fn erase_type(&self) -> PropId<()> {
 		PropId(self.0, PhantomData)
@@ -29,8 +26,7 @@ impl<T> PropId<T> {
 }
 impl<T> Display for PropId<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let (slab, prop) = self.split();
-		if f.alternate() { write!(f, "0x{slab}_{prop}") } else { write!(f, "{slab}_{prop}") }
+		write!(f, "{:#x}", self.value())
 	}
 }
 impl<T> Debug for PropId<T> {
@@ -63,38 +59,6 @@ impl<T> Eq for PropId<T> {}
 impl<T> Ord for PropId<T> {
 	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
 		self.0.cmp(&other.0)
-	}
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PropIndex(u16);
-impl PropIndex {
-	pub(crate) const MAX: usize = 0xFFFF;
-	pub fn value(&self) -> u64 {
-		self.0 as u64
-	}
-}
-impl Display for PropIndex {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if f.alternate() { write!(f, "{:#04x}", self.0) } else { write!(f, "{:04x}", self.0) }
-	}
-}
-impl Debug for PropIndex {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "PropIndex({:#})", self)
-	}
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ItemIndex(u16);
-impl ItemIndex {
-	pub fn value(&self) -> u64 {
-		self.0 as u64
-	}
-}
-impl Debug for ItemIndex {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "ItemIndex({:#04x})", self.0)
 	}
 }
 
