@@ -18,4 +18,8 @@ pub enum Error {
 	UnderMut,
 	Tracking,
 	NotTracking,
+	OverCapacity,
+}
+pub(crate) fn struct_change_while_life_refs() -> ! {
+	panic!("can not do a structural change while there is live references")
 }

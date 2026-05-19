@@ -1,9 +1,10 @@
 use std::cell::UnsafeCell;
 
 use crate::reactive::{
-	Error, PropId, SlabId, Store,
+	Error, PropId, PropIndex, SlabId, Store,
 	prop::Prop,
 	signal::{ROSignal, Signal, WOSignal},
+	struct_change_while_life_refs,
 };
 
 pub struct Slab<'store> {
@@ -22,25 +23,31 @@ impl<'store> Slab<'store> {
 		if self.store().ref_count.get() != 0 {
 			return Err(Error::LiveRefs);
 		}
-		Ok(self.store.slabs()[&self.id].add_prop(value))
+		let slab = self.store.slabs().get_mut(&self.id).unwrap();
+		if slab.props().len() == PropIndex::MAX {
+			return Err(Error::OverCapacity);
+		}
+		Ok(slab.add_prop(value))
+	}
+	fn add_prop_panicing<T: 'static>(&self, value: T) -> PropId<T> {
+		match self.add_prop(value) {
+			Ok(id) => id,
+			Err(Error::LiveRefs) => struct_change_while_life_refs(),
+			Err(Error::OverCapacity) => panic!("slab ({}) is full", self.id),
+			_ => unreachable!(),
+		}
 	}
 
 	pub fn signal<'scope, T: 'static>(&'scope self, value: T) -> Signal<'scope, T> {
-		let Ok(id) = self.add_prop(value) else {
-			panic!("can not do a structural change while there is live references");
-		};
+		let id = self.add_prop_panicing(value);
 		Signal { store: self.store, prop: id }
 	}
 	pub fn ro_signal<'scope, T: 'static>(&'scope self, value: T) -> ROSignal<'scope, T> {
-		let Ok(id) = self.add_prop(value) else {
-			panic!("can not do a structural change while there is live references");
-		};
+		let id = self.add_prop_panicing(value);
 		ROSignal { store: self.store, prop: id }
 	}
 	pub fn wo_signal<'scope, T: 'static>(&'scope self, value: T) -> WOSignal<'scope, T> {
-		let Ok(id) = self.add_prop(value) else {
-			panic!("can not do a structural change while there is live references");
-		};
+		let id = self.add_prop_panicing(value);
 		WOSignal { store: self.store, prop: id }
 	}
 }
@@ -49,10 +56,11 @@ impl<'store> Slab<'store> {
 pub struct SlabData {
 	id: SlabId,
 	props: UnsafeCell<Vec<Prop>>,
+	pub global: bool,
 }
 impl SlabData {
-	pub fn new(id: SlabId) -> Self {
-		Self { id, props: UnsafeCell::new(Vec::new()) }
+	pub fn new(id: SlabId, global: bool) -> Self {
+		Self { id, props: UnsafeCell::new(Vec::new()), global }
 	}
 	pub fn props(&self) -> &mut Vec<Prop> {
 		unsafe { &mut *self.props.get() }

@@ -69,6 +69,7 @@ impl<T> Ord for PropId<T> {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PropIndex(u16);
 impl PropIndex {
+	pub(crate) const MAX: usize = 0xFFFF;
 	pub fn value(&self) -> u64 {
 		self.0 as u64
 	}
@@ -81,6 +82,19 @@ impl Display for PropIndex {
 impl Debug for PropIndex {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "PropIndex({:#})", self)
+	}
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ItemIndex(u16);
+impl ItemIndex {
+	pub fn value(&self) -> u64 {
+		self.0 as u64
+	}
+}
+impl Debug for ItemIndex {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "ItemIndex({:#04x})", self.0)
 	}
 }
 
