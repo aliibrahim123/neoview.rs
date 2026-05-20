@@ -1,6 +1,6 @@
 use std::{
 	cell::{Cell, RefCell, UnsafeCell},
-	mem::transmute,
+	marker::PhantomData,
 	ops::DerefMut,
 	panic::Location,
 	ptr,
@@ -15,7 +15,7 @@ use crate::reactive::{
 	signal::{MutGuard, ReadGuard, Signal},
 	slab::{Slab, SlabData},
 	struct_change_while_life_refs,
-	updater::{Effect, Updater, start_track_panicing},
+	updater::{Updater, start_track_panicing},
 };
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
@@ -79,13 +79,13 @@ impl Store {
 		let id = self.next_slab.get();
 		self.slabs.borrow_mut().insert(id, SlabData::default());
 		self.next_slab.set(SlabId(id.0 + 1));
-		Ok(Slab { store: self, id })
+		Ok(Slab::new(self, id))
 	}
 	pub fn slab(&self, id: SlabId) -> Result<Slab<'_>, Error> {
 		if !self.slabs.borrow().contains_key(&id) {
 			return Err(Error::Removed);
 		}
-		Ok(Slab { store: self, id })
+		Ok(Slab::new(self, id))
 	}
 	pub fn remove_slab(&self, id: SlabId) -> Result<(), Error> {
 		if self.ref_count.get() != 0 {
@@ -294,7 +294,6 @@ macro_rules! id_tuple {
 			}
 		}
 	};
-
 }
 id_tuple![A: 0];
 id_tuple![A: 0, B: 1];

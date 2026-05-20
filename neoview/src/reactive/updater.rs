@@ -1,8 +1,10 @@
 use std::{fmt::Debug, mem::transmute, panic::Location};
 
+use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
+use smallvec::SmallVec;
 
-use crate::reactive::{PropId, Store, TrackResult, prop::ItemId};
+use crate::reactive::{PropId, Store, prop::ItemId};
 
 pub struct Effect {
 	pub fun: Box<dyn FnMut()>,
@@ -22,12 +24,19 @@ impl Debug for Effect {
 
 #[derive(Debug, Default)]
 pub struct Updater {
-	pub effects: SlotMap<ItemId, Effect>,
+	effects: SlotMap<ItemId, Effect>,
+	read_deps: FxHashMap<ItemId, SmallVec<[ItemId; 2]>>,
 }
 impl Updater {
 	pub(crate) fn remove_items(&mut self, effects: &[ItemId], props: &[ItemId]) {
-		for effect in effects {
-			self.effects.remove(*effect);
+		for prop in props {
+			self.read_deps.remove(prop);
+		}
+		for id in effects {
+			let effect = self.effects.remove(*id).unwrap();
+			for read in &effect.read {
+				self.read_deps.get_mut(read).map(|effects| effects.retain(|cur| *cur != *id));
+			}
 		}
 	}
 
@@ -51,7 +60,13 @@ impl Updater {
 		let write = write.into_iter().map(|id| id.0).collect();
 		let read = read.into_iter().map(|id| id.0).collect();
 
-		self.effects.insert(Effect { fun, loc, write, read })
+		let id = self.effects.insert(Effect { fun, loc, write, read });
+
+		for read in &self.effects[id].read {
+			self.read_deps.entry(*read).or_default().push(id);
+		}
+
+		id
 	}
 }
 

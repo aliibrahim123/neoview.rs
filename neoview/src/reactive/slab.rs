@@ -1,4 +1,4 @@
-use std::{cell::RefMut, panic::Location};
+use std::{cell::RefMut, fmt::Debug, marker::PhantomData, panic::Location};
 
 use crate::reactive::{
 	Error, PropId, SlabId, Store,
@@ -11,8 +11,16 @@ pub struct Slab<'store> {
 	pub(crate) store: &'store Store,
 	pub(crate) id: SlabId,
 }
+impl Debug for Slab<'_> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Slab").field("id", &self.id).finish()
+	}
+}
 impl<'store> Slab<'store> {
-	pub fn store(&self) -> &Store {
+	pub(crate) fn new(store: &'store Store, id: SlabId) -> Self {
+		Self { store, id }
+	}
+	pub fn store(&self) -> &'store Store {
 		self.store
 	}
 	pub fn id(&self) -> SlabId {
@@ -32,15 +40,15 @@ impl<'store> Slab<'store> {
 		id
 	}
 
-	pub fn signal<T: 'static>(&self, value: T) -> Signal<'_, T> {
+	pub fn signal<T: 'static>(&self, value: T) -> Signal<'store, T> {
 		let id = self.add_prop_panicing(value);
 		Signal { store: self.store, prop: id }
 	}
-	pub fn ro_signal<T: 'static>(&self, value: T) -> ROSignal<'_, T> {
+	pub fn ro_signal<T: 'static>(&self, value: T) -> ROSignal<'store, T> {
 		let id = self.add_prop_panicing(value);
 		ROSignal { store: self.store, prop: id }
 	}
-	pub fn wo_signal<T: 'static>(&self, value: T) -> WOSignal<'_, T> {
+	pub fn wo_signal<T: 'static>(&self, value: T) -> WOSignal<'store, T> {
 		let id = self.add_prop_panicing(value);
 		WOSignal { store: self.store, prop: id }
 	}
@@ -61,10 +69,8 @@ impl<'store> Slab<'store> {
 	}
 
 	#[track_caller]
-	fn computed<'scope, T: 'static>(
-		&'scope self, fun: impl FnMut() -> T + 'scope,
-	) -> ROSignal<'scope, T> {
-		self.store().computed_manual(fun, Location::caller())
+	fn computed<T: 'static>(&self, fun: impl FnMut() -> T + 'store) -> ROSignal<'store, T> {
+		self.store.computed_manual(fun, Location::caller())
 	}
 }
 
