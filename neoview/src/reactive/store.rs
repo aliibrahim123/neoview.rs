@@ -15,7 +15,7 @@ use crate::reactive::{
 	signal::{MutGuard, ReadGuard, Signal},
 	slab::{Slab, SlabData},
 	struct_change_while_life_refs,
-	updater::Effect,
+	updater::{Effect, Updater, start_track_panicing},
 };
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
@@ -23,14 +23,19 @@ pub struct TrackResult {
 	pub read: Vec<PropId<()>>,
 	pub written: Vec<PropId<()>>,
 }
+impl TrackResult {
+	pub(crate) fn destruct(self) -> (Vec<PropId<()>>, Vec<PropId<()>>) {
+		(self.read, self.written)
+	}
+}
 
 #[derive(Debug)]
 pub struct Store {
 	pub(crate) props: UnsafeCell<SlotMap<ItemId, Prop>>,
-	pub(crate) effects: RefCell<SlotMap<ItemId, Effect>>,
-
 	pub(crate) slabs: RefCell<FxHashMap<SlabId, SlabData>>,
 	next_slab: Cell<SlabId>,
+
+	pub(crate) updater: RefCell<Updater>,
 
 	pub(crate) ref_count: Cell<u64>,
 	tracking: RefCell<Option<TrackResult>>,
@@ -39,10 +44,10 @@ impl Default for Store {
 	fn default() -> Self {
 		Store {
 			ref_count: Cell::new(0),
-			props: UnsafeCell::new(SlotMap::with_key()),
+			props: UnsafeCell::new(SlotMap::default()),
 			slabs: RefCell::new(FxHashMap::default()),
 			next_slab: Cell::new(SlabId(0)),
-			effects: RefCell::new(SlotMap::with_key()),
+			updater: RefCell::new(Updater::default()),
 			tracking: RefCell::new(None),
 		}
 	}
@@ -88,14 +93,14 @@ impl Store {
 		}
 		let mut slabs = self.slabs.borrow_mut();
 		let slab = slabs.get(&id).ok_or(Error::Removed)?;
+
 		let props = self.props_mut();
 		for id in &slab.props {
 			props.remove(*id);
 		}
-		let mut effects = self.effects.borrow_mut();
-		for id in &slab.effects {
-			effects.remove(*id);
-		}
+
+		self.updater.borrow_mut().remove_items(&slab.effects, &slab.props);
+
 		slabs.remove(&id);
 		Ok(())
 	}
@@ -119,21 +124,21 @@ impl Store {
 		}
 	}
 
-	pub fn try_get<'store: 'scope, 'scope, T: 'static>(
+	pub fn try_read<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> Result<ReadGuard<'scope, T>, Error> {
 		let guard = self.try_peek(id)?;
 		self.track_read(id);
 		Ok(guard)
 	}
-	pub fn get<'store: 'scope, 'scope, T: 'static>(
+	pub fn read<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> ReadGuard<'scope, T> {
 		self.track_read(id);
 		self.peek(id)
 	}
 
-	pub fn try_get_mut<'store: 'scope, 'scope, T: 'static>(
+	pub fn try_read_mut<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> Result<MutGuard<'scope, T>, Error> {
 		let Some(guard) = MutGuard::new(self, self.get_prop(id.0)?) else {
@@ -142,10 +147,10 @@ impl Store {
 		self.track_write(id);
 		Ok(guard)
 	}
-	pub fn get_mut<'store: 'scope, 'scope, T: 'static>(
+	pub fn read_mut<'store: 'scope, 'scope, T: 'static>(
 		&'store self, id: PropId<T>,
 	) -> MutGuard<'scope, T> {
-		match self.try_get_mut(id) {
+		match self.try_read_mut(id) {
 			Ok(guard) => guard,
 			Err(Error::Removed) => panic!("getting removed property ({id})"),
 			Err(Error::LiveRefs) => panic!("mutating property ({id}) having live references"),
@@ -153,13 +158,13 @@ impl Store {
 		}
 	}
 
-	pub fn try_set<T: 'static>(&self, id: PropId<T>, value: T) -> Result<(), Error> {
+	pub fn try_write<T: 'static>(&self, id: PropId<T>, value: T) -> Result<(), Error> {
 		self.get_prop(id.0)?.set(value);
 		self.track_write(id);
 		Ok(())
 	}
-	pub fn set<T: 'static>(&self, id: PropId<T>, value: T) {
-		match self.try_set(id, value) {
+	pub fn write<T: 'static>(&self, id: PropId<T>, value: T) {
+		match self.try_write(id, value) {
 			Ok(()) => (),
 			Err(Error::Removed) => panic!("setting removed property ({id})"),
 			_ => unreachable!(),
@@ -178,58 +183,55 @@ impl Store {
 		id
 	}
 
-	pub fn signal<'store: 'scope, 'scope, T: 'static>(&'store self, value: T) -> Signal<'scope, T> {
+	pub fn signal<T: 'static>(&self, value: T) -> Signal<'_, T> {
 		Signal { store: self, prop: self.add_prop_panicing(value) }
 	}
-	pub fn ro_signal<'store: 'scope, 'scope, T: 'static>(
-		&'store self, value: T,
-	) -> ROSignal<'scope, T> {
+	pub fn ro_signal<T: 'static>(&self, value: T) -> ROSignal<'_, T> {
 		ROSignal { store: self, prop: self.add_prop_panicing(value) }
 	}
-	pub fn wo_signal<'store: 'scope, 'scope, T: 'static>(
-		&'store self, value: T,
-	) -> WOSignal<'scope, T> {
+	pub fn wo_signal<T: 'static>(&self, value: T) -> WOSignal<'_, T> {
 		WOSignal { store: self, prop: self.add_prop_panicing(value) }
 	}
-	pub fn revive<Tuple: IdTuple>(&self, ids: Tuple) -> Tuple::Signals<'_> {
-		Tuple::revive(self, ids)
+	pub fn revive<I: Ids>(&self, ids: I) -> I::Signals<'_> {
+		I::revive(self, ids)
 	}
 	pub fn try_revive<T: 'static>(&self, id: PropId<T>) -> Option<Signal<'_, T>> {
 		self.props().contains_key(id.0).then(|| Signal { store: self, prop: id })
 	}
 
-	pub(crate) fn add_effect<'store>(
-		&'store self, mut fun: impl FnMut() + 'store, loc: &'static Location,
-	) -> ItemId {
-		self.start_track().unwrap();
-		fun();
-		let TrackResult { read, written } = self.end_track().unwrap();
-
-		self.add_effect_manual(read, written, fun, loc)
-	}
-	pub(crate) fn add_effect_manual<'store>(
-		&'store self, read: Vec<PropId<()>>, write: Vec<PropId<()>>, fun: impl FnMut() + 'store,
-		loc: &'static Location,
-	) -> ItemId {
-		let fun = Box::new(fun);
-		let fun =
-			unsafe { transmute::<Box<dyn FnMut() + 'store>, Box<dyn FnMut() + 'static>>(fun) };
-
-		let write = write.into_iter().map(|id| id.0).collect();
-		let read = read.into_iter().map(|id| id.0).collect();
-
-		self.effects.borrow_mut().insert(Effect { fun, loc, write, read })
-	}
-
 	#[track_caller]
 	pub fn effect<'store>(&'store self, fun: impl FnMut() + 'store) {
-		self.add_effect(fun, Location::caller());
+		self.updater.borrow_mut().add_effect(self, fun, None, Location::caller());
 	}
 	#[track_caller]
 	pub fn effect_manual<'store>(
 		&'store self, read: Vec<PropId<()>>, write: Vec<PropId<()>>, fun: impl FnMut() + 'store,
 	) {
-		self.add_effect_manual(read, write, fun, Location::caller());
+		let mut updater = self.updater.borrow_mut();
+		updater.add_effect(self, fun, Some((read, write)), Location::caller());
+	}
+
+	pub(crate) fn computed_manual<'store, T: 'static>(
+		&'store self, mut fun: impl FnMut() -> T + 'store, loc: &'static Location,
+	) -> ROSignal<'store, T> {
+		start_track_panicing(self);
+		let value = fun();
+		let TrackResult { read, written } = self.end_track().unwrap();
+
+		let id = self.add_prop_panicing(value);
+
+		let fun = move || self.write(id, fun());
+		let mut updater = self.updater.borrow_mut();
+		updater.add_effect(self, fun, Some((read, written)), loc);
+
+		ROSignal { store: self, prop: id }
+	}
+
+	#[track_caller]
+	pub fn computed<'store, T: 'static>(
+		&'store self, fun: impl FnMut() -> T + 'store,
+	) -> ROSignal<'store, T> {
+		self.computed_manual(fun, Location::caller())
 	}
 
 	pub fn status_of<T: 'static>(&self, id: PropId<T>) -> PropStatus {
@@ -273,13 +275,19 @@ impl Store {
 	}
 }
 
-pub trait IdTuple {
+pub trait Ids {
 	type Signals<'scope>;
 	fn revive(store: &Store, ids: Self) -> Self::Signals<'_>;
 }
+impl<T: 'static> Ids for PropId<T> {
+	type Signals<'scope> = Signal<'scope, T>;
+	fn revive(store: &Store, id: Self) -> Self::Signals<'_> {
+		Signal { store, prop: id }
+	}
+}
 macro_rules! id_tuple {
 	[$($item:ident : $ind:tt),*] => {
-		impl<$($item: 'static),*> IdTuple for ($(PropId<$item>),*,) {
+		impl<$($item: 'static),*> Ids for ($(PropId<$item>),*,) {
 			type Signals<'scope> = ($(Signal<'scope, $item>),*,);
 			fn revive(store: &Store, ids: Self) -> Self::Signals<'_> {
 				($(Signal { store, prop: ids.$ind }),*,)

@@ -86,19 +86,25 @@ pub trait ReadableSignal<T: 'static>: SignalBase<T> {
 	fn peek(&self) -> ReadGuard<'_, T> {
 		self.store().peek(self.prop())
 	}
-	fn get(&self) -> ReadGuard<'_, T> {
-		self.store().get(self.prop())
+	fn read(&self) -> ReadGuard<'_, T> {
+		self.store().read(self.prop())
+	}
+	fn get(&self) -> T
+	where
+		T: Copy,
+	{
+		*self.store().read(self.prop())
 	}
 	fn track_read(&self) {
 		self.store().track_read(self.prop());
 	}
 }
 pub trait WritableSignal<T: 'static>: SignalBase<T> {
-	fn set(&self, value: T) {
-		self.store().set(self.prop(), value)
+	fn write(&self, value: T) {
+		self.store().write(self.prop(), value)
 	}
 	fn update(&self, fun: impl FnOnce(&mut T)) {
-		fun(self.store().get_mut(self.prop()).deref_mut())
+		fun(self.store().read_mut(self.prop()).deref_mut())
 	}
 	fn track_write(&self) {
 		self.store().track_write(self.prop());
@@ -147,8 +153,8 @@ signal_common_impl!(Signal);
 impl<T: 'static> ReadableSignal<T> for Signal<'_, T> {}
 impl<T: 'static> WritableSignal<T> for Signal<'_, T> {}
 impl<'scope, T: 'static> Signal<'scope, T> {
-	pub fn get_mut(&self) -> MutGuard<'scope, T> {
-		self.store.get_mut(self.prop)
+	pub fn read_mut(&self) -> MutGuard<'scope, T> {
+		self.store.read_mut(self.prop)
 	}
 	pub fn as_readonly(&self) -> ROSignal<'scope, T> {
 		ROSignal { store: self.store, prop: self.prop }

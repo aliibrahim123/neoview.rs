@@ -19,11 +19,11 @@ impl<'store> Slab<'store> {
 		self.id
 	}
 	fn slab(&self) -> RefMut<'_, SlabData> {
-		let slabs = self.store().slabs.borrow_mut();
+		let slabs = self.store.slabs.borrow_mut();
 		RefMut::map(slabs, |slabs| slabs.get_mut(&self.id).unwrap())
 	}
 	pub fn add_prop<T: 'static>(&self, value: T) -> Result<PropId<T>, Error> {
-		let id = self.store().add_prop(value)?;
+		let id = self.store.add_prop(value)?;
 		self.slab().props.push(id.0);
 		Ok(id)
 	}
@@ -32,30 +32,39 @@ impl<'store> Slab<'store> {
 		id
 	}
 
-	pub fn signal<'scope, T: 'static>(&'scope self, value: T) -> Signal<'scope, T> {
+	pub fn signal<T: 'static>(&self, value: T) -> Signal<'_, T> {
 		let id = self.add_prop_panicing(value);
 		Signal { store: self.store, prop: id }
 	}
-	pub fn ro_signal<'scope, T: 'static>(&'scope self, value: T) -> ROSignal<'scope, T> {
+	pub fn ro_signal<T: 'static>(&self, value: T) -> ROSignal<'_, T> {
 		let id = self.add_prop_panicing(value);
 		ROSignal { store: self.store, prop: id }
 	}
-	pub fn wo_signal<'scope, T: 'static>(&'scope self, value: T) -> WOSignal<'scope, T> {
+	pub fn wo_signal<T: 'static>(&self, value: T) -> WOSignal<'_, T> {
 		let id = self.add_prop_panicing(value);
 		WOSignal { store: self.store, prop: id }
 	}
 
 	#[track_caller]
 	pub fn effect(&self, fun: impl FnMut() + 'store) {
-		let id = self.store().add_effect(fun, Location::caller());
+		let mut updater = self.store.updater.borrow_mut();
+		let id = updater.add_effect(self.store, fun, None, Location::caller());
 		self.slab().effects.push(id);
 	}
 	#[track_caller]
 	pub fn effect_manual(
 		&self, read: Vec<PropId<()>>, write: Vec<PropId<()>>, fun: impl FnMut() + 'store,
 	) {
-		let id = self.store().add_effect_manual(read, write, fun, Location::caller());
+		let mut updater = self.store.updater.borrow_mut();
+		let id = updater.add_effect(self.store, fun, Some((read, write)), Location::caller());
 		self.slab().effects.push(id);
+	}
+
+	#[track_caller]
+	fn computed<'scope, T: 'static>(
+		&'scope self, fun: impl FnMut() -> T + 'scope,
+	) -> ROSignal<'scope, T> {
+		self.store().computed_manual(fun, Location::caller())
 	}
 }
 
