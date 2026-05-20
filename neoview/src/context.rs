@@ -1,14 +1,19 @@
-pub trait Context: 'static {
-	type Id: Copy;
+use crate::reactive::Store;
+
+pub trait Context: Sized {
+	fn store(&mut self) -> &mut Store<Self>;
+	fn store_ref(&self) -> &Store<Self>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct VoidContext;
-impl Context for VoidContext {
-	type Id = ();
+#[derive(Debug, PartialEq, Eq, Default)]
+pub struct VoidContext {
+	store: Store<Self>,
 }
-impl VoidContext {
-	pub fn get_by_id(id: (), _life_marker: &()) -> &VoidContext {
-		&VoidContext
+impl Context for VoidContext {
+	fn store(&mut self) -> &mut Store<Self> {
+		&mut self.store
+	}
+	fn store_ref(&self) -> &Store<Self> {
+		&self.store
 	}
 }

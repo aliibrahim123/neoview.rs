@@ -1,22 +1,22 @@
-use std::{
-	cell::{Cell, RefCell, UnsafeCell},
-	marker::PhantomData,
-	ops::DerefMut,
-	panic::Location,
-	ptr,
-};
+use std::{any::Any, cell::RefCell, marker::PhantomData, ops::DerefMut, panic::Location, ptr};
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 
-use crate::reactive::{
-	Error, PropId, ROSignal, SlabId, WOSignal,
-	prop::{ItemId, Prop, PropStatus},
-	signal::{MutGuard, ReadGuard, Signal},
-	slab::{Slab, SlabData},
-	struct_change_while_life_refs,
-	updater::{Updater, start_track_panicing},
+use crate::{
+	context::Context,
+	reactive::{
+		Error, PropId, SlabId,
+		prop::ItemId,
+		updater::{Updater, start_track_panicing},
+	},
 };
+
+#[derive(Debug, Default)]
+pub struct SlabData {
+	pub props: Vec<ItemId>,
+	pub effects: Vec<ItemId>,
+}
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
 pub struct TrackResult {
@@ -30,216 +30,169 @@ impl TrackResult {
 }
 
 #[derive(Debug)]
-pub struct Store {
-	pub(crate) props: UnsafeCell<SlotMap<ItemId, Prop>>,
-	pub(crate) slabs: RefCell<FxHashMap<SlabId, SlabData>>,
-	next_slab: Cell<SlabId>,
+pub struct Store<Ctx> {
+	pub(crate) props: SlotMap<ItemId, Box<dyn Any>>,
+	pub(crate) slabs: FxHashMap<SlabId, SlabData>,
+	next_slab: SlabId,
 
-	pub(crate) updater: RefCell<Updater>,
+	pub(crate) updater: Updater<Ctx>,
 
-	pub(crate) ref_count: Cell<u64>,
 	tracking: RefCell<Option<TrackResult>>,
+	_marker: PhantomData<Ctx>,
 }
-impl Default for Store {
+impl<Ctx: Context> Default for Store<Ctx> {
 	fn default() -> Self {
 		Store {
-			ref_count: Cell::new(0),
-			props: UnsafeCell::new(SlotMap::default()),
-			slabs: RefCell::new(FxHashMap::default()),
-			next_slab: Cell::new(SlabId(0)),
-			updater: RefCell::new(Updater::default()),
+			props: SlotMap::default(),
+			slabs: FxHashMap::default(),
+			next_slab: SlabId(0),
+			updater: Updater::default(),
 			tracking: RefCell::new(None),
+			_marker: PhantomData,
 		}
 	}
 }
-impl PartialEq for Store {
+impl<Ctx> PartialEq for Store<Ctx> {
 	fn eq(&self, other: &Self) -> bool {
 		ptr::eq(self, other)
 	}
 }
-impl Store {
-	pub(crate) fn props(&self) -> &SlotMap<ItemId, Prop> {
-		unsafe { &*self.props.get() }
+impl<Ctx> Eq for Store<Ctx> {}
+impl<Ctx: Context> Store<Ctx> {
+	pub fn add_slab(&mut self) -> SlabId {
+		let id = self.next_slab;
+		self.slabs.insert(id, SlabData::default());
+		self.next_slab = SlabId(id.0 + 1);
+		id
 	}
-	pub(crate) fn props_mut(&self) -> &mut SlotMap<ItemId, Prop> {
-		unsafe { &mut *self.props.get() }
-	}
+	pub fn remove_slab(&mut self, id: SlabId) -> Result<(), Error> {
+		let slab = self.slabs.get(&id).ok_or(Error::Removed)?;
 
-	pub(crate) fn inc_ref(&self) {
-		self.ref_count.update(|c| c + 1);
-	}
-	pub(crate) fn dec_ref(&self) {
-		self.ref_count.update(|c| c - 1);
-	}
-
-	pub fn add_slab(&self) -> Result<Slab<'_>, Error> {
-		if self.ref_count.get() != 0 {
-			return Err(Error::LiveRefs);
-		}
-		let id = self.next_slab.get();
-		self.slabs.borrow_mut().insert(id, SlabData::default());
-		self.next_slab.set(SlabId(id.0 + 1));
-		Ok(Slab::new(self, id))
-	}
-	pub fn slab(&self, id: SlabId) -> Result<Slab<'_>, Error> {
-		if !self.slabs.borrow().contains_key(&id) {
-			return Err(Error::Removed);
-		}
-		Ok(Slab::new(self, id))
-	}
-	pub fn remove_slab(&self, id: SlabId) -> Result<(), Error> {
-		if self.ref_count.get() != 0 {
-			return Err(Error::LiveRefs);
-		}
-		let mut slabs = self.slabs.borrow_mut();
-		let slab = slabs.get(&id).ok_or(Error::Removed)?;
-
-		let props = self.props_mut();
 		for id in &slab.props {
-			props.remove(*id);
+			self.props.remove(*id);
 		}
 
-		self.updater.borrow_mut().remove_items(&slab.effects, &slab.props);
+		self.updater.remove_items(&slab.effects, &slab.props);
 
-		slabs.remove(&id);
+		self.slabs.remove(&id);
 		Ok(())
 	}
 
-	fn get_prop(&self, id: ItemId) -> Result<&Prop, Error> {
-		self.props().get(id).ok_or(Error::Removed)
+	pub fn create_prop<T: 'static>(&mut self, value: T) -> PropId<T> {
+		let id = self.props.insert(Box::new(value));
+		PropId::new(id)
 	}
-	pub fn try_peek<'store: 'scope, 'scope, T: 'static>(
-		&'store self, id: PropId<T>,
-	) -> Result<ReadGuard<'scope, T>, Error> {
-		ReadGuard::new(self, self.get_prop(id.0)?).ok_or(Error::UnderMut)
-	}
-	pub fn peek<'store: 'scope, 'scope, T: 'static>(
-		&'store self, id: PropId<T>,
-	) -> ReadGuard<'scope, T> {
-		match self.try_peek(id) {
-			Ok(guard) => guard,
-			Err(Error::Removed) => panic!("getting removed property ({id})"),
-			Err(Error::UnderMut) => panic!("getting property ({id}) under mutation"),
-			_ => unreachable!(),
+	pub fn create_prop_in<T: 'static>(
+		&mut self, slab: SlabId, value: T,
+	) -> Result<PropId<T>, Error> {
+		if !self.slabs.contains_key(&slab) {
+			return Err(Error::Removed);
 		}
+		let id = self.create_prop(value);
+		self.slabs.get_mut(&slab).unwrap().props.push(id.0);
+		Ok(id)
 	}
 
-	pub fn try_read<'store: 'scope, 'scope, T: 'static>(
-		&'store self, id: PropId<T>,
-	) -> Result<ReadGuard<'scope, T>, Error> {
-		let guard = self.try_peek(id)?;
-		self.track_read(id);
-		Ok(guard)
+	pub fn contains<T>(&self, id: PropId<T>) -> bool {
+		self.props.contains_key(id.0)
 	}
-	pub fn read<'store: 'scope, 'scope, T: 'static>(
-		&'store self, id: PropId<T>,
-	) -> ReadGuard<'scope, T> {
+
+	pub fn try_peek<T: 'static>(&self, id: PropId<T>) -> Option<&T> {
+		self.props.get(id.0)?.downcast_ref()
+	}
+	pub fn peek<T: 'static>(&self, id: PropId<T>) -> &T {
+		self.try_peek(id).expect("reading removed property")
+	}
+
+	pub fn try_read<T: 'static>(&self, id: PropId<T>) -> Option<&T> {
+		let value = self.try_peek(id)?;
+		self.track_read(id);
+		Some(value)
+	}
+	pub fn read<T: 'static>(&self, id: PropId<T>) -> &T {
 		self.track_read(id);
 		self.peek(id)
 	}
 
-	pub fn try_read_mut<'store: 'scope, 'scope, T: 'static>(
-		&'store self, id: PropId<T>,
-	) -> Result<MutGuard<'scope, T>, Error> {
-		let Some(guard) = MutGuard::new(self, self.get_prop(id.0)?) else {
-			return Err(Error::LiveRefs);
-		};
-		self.track_write(id);
-		Ok(guard)
+	pub fn try_get<T: 'static + Copy>(&self, id: PropId<T>) -> Option<T> {
+		self.try_read(id).copied()
 	}
-	pub fn read_mut<'store: 'scope, 'scope, T: 'static>(
-		&'store self, id: PropId<T>,
-	) -> MutGuard<'scope, T> {
-		match self.try_read_mut(id) {
-			Ok(guard) => guard,
-			Err(Error::Removed) => panic!("getting removed property ({id})"),
-			Err(Error::LiveRefs) => panic!("mutating property ({id}) having live references"),
-			_ => unreachable!(),
-		}
+	pub fn get<T: 'static + Copy>(&self, id: PropId<T>) -> T {
+		*self.read(id)
 	}
 
-	pub fn try_write<T: 'static>(&self, id: PropId<T>, value: T) -> Result<(), Error> {
-		self.get_prop(id.0)?.set(value);
+	pub fn try_read_mut<T: 'static>(&mut self, id: PropId<T>) -> Option<&mut T> {
+		let prop = self.props.get_mut(id.0)?.downcast_mut()?;
+		Self::_track_write(&self.tracking, id);
+		Some(prop)
+	}
+	pub fn read_mut<T: 'static>(&mut self, id: PropId<T>) -> &mut T {
+		self.try_read_mut(id).expect("mutating removed property")
+	}
+
+	pub fn try_write<T: 'static>(&mut self, id: PropId<T>, value: T) -> Result<(), Error> {
+		let prop = self.props.get_mut(id.0).ok_or(Error::Removed)?;
+		*prop.downcast_mut().unwrap() = value;
 		self.track_write(id);
 		Ok(())
 	}
-	pub fn write<T: 'static>(&self, id: PropId<T>, value: T) {
-		match self.try_write(id, value) {
-			Ok(()) => (),
-			Err(Error::Removed) => panic!("setting removed property ({id})"),
-			_ => unreachable!(),
-		}
+	pub fn write<T: 'static>(&mut self, id: PropId<T>, value: T) {
+		self.try_write(id, value).expect("writing removed property");
 	}
 
-	pub fn add_prop<T: 'static>(&self, value: T) -> Result<PropId<T>, Error> {
-		if self.ref_count.get() != 0 {
-			return Err(Error::LiveRefs);
-		}
-		let id = self.props_mut().insert(Prop::new(value));
-		Ok(PropId::new(id))
+	#[track_caller]
+	pub fn effect(ctx: &mut Ctx, fun: impl FnMut(&mut Ctx) + 'static) {
+		Updater::add_effect(ctx, fun, None, Location::caller());
 	}
-	fn add_prop_panicing<T: 'static>(&self, value: T) -> PropId<T> {
-		let Ok(id) = self.add_prop(value) else { struct_change_while_life_refs() };
+	#[track_caller]
+	pub fn effect_manual(
+		ctx: &mut Ctx, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+		fun: impl FnMut(&mut Ctx) + 'static,
+	) {
+		Updater::add_effect(ctx, fun, Some((read, write)), Location::caller());
+	}
+	#[track_caller]
+	pub fn effect_in(ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) + 'static) {
+		let id = Updater::add_effect(ctx, fun, None, Location::caller());
+		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
+	}
+	#[track_caller]
+	pub fn effect_manual_in(
+		ctx: &mut Ctx, slab: SlabId, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+		fun: impl FnMut(&mut Ctx) + 'static,
+	) {
+		let id = Updater::add_effect(ctx, fun, Some((read, write)), Location::caller());
+		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
+	}
+
+	pub(crate) fn computed_manual<T: 'static>(
+		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) -> T + 'static, loc: &'static Location,
+	) -> PropId<T> {
+		start_track_panicing(ctx.store_ref());
+		let value = fun(ctx);
+		let store = ctx.store();
+		let TrackResult { read, written } = store.end_track().unwrap();
+
+		if !written.is_empty() {
+			panic!("computed properties can not write any properties");
+		}
+
+		let id = store.create_prop(value);
+
+		let fun = move |ctx: &mut Ctx| {
+			let value = fun(ctx);
+			ctx.store().write(id, value);
+		};
+		Updater::add_effect(ctx, fun, Some((read, vec![id.erase_type()])), loc);
+
 		id
 	}
 
-	pub fn signal<T: 'static>(&self, value: T) -> Signal<'_, T> {
-		Signal { store: self, prop: self.add_prop_panicing(value) }
-	}
-	pub fn ro_signal<T: 'static>(&self, value: T) -> ROSignal<'_, T> {
-		ROSignal { store: self, prop: self.add_prop_panicing(value) }
-	}
-	pub fn wo_signal<T: 'static>(&self, value: T) -> WOSignal<'_, T> {
-		WOSignal { store: self, prop: self.add_prop_panicing(value) }
-	}
-	pub fn revive<I: Ids>(&self, ids: I) -> I::Signals<'_> {
-		I::revive(self, ids)
-	}
-	pub fn try_revive<T: 'static>(&self, id: PropId<T>) -> Option<Signal<'_, T>> {
-		self.props().contains_key(id.0).then(|| Signal { store: self, prop: id })
-	}
-
 	#[track_caller]
-	pub fn effect<'store>(&'store self, fun: impl FnMut() + 'store) {
-		self.updater.borrow_mut().add_effect(self, fun, None, Location::caller());
-	}
-	#[track_caller]
-	pub fn effect_manual<'store>(
-		&'store self, read: Vec<PropId<()>>, write: Vec<PropId<()>>, fun: impl FnMut() + 'store,
-	) {
-		let mut updater = self.updater.borrow_mut();
-		updater.add_effect(self, fun, Some((read, write)), Location::caller());
-	}
-
-	pub(crate) fn computed_manual<'store, T: 'static>(
-		&'store self, mut fun: impl FnMut() -> T + 'store, loc: &'static Location,
-	) -> ROSignal<'store, T> {
-		start_track_panicing(self);
-		let value = fun();
-		let TrackResult { read, written } = self.end_track().unwrap();
-
-		let id = self.add_prop_panicing(value);
-
-		let fun = move || self.write(id, fun());
-		let mut updater = self.updater.borrow_mut();
-		updater.add_effect(self, fun, Some((read, written)), loc);
-
-		ROSignal { store: self, prop: id }
-	}
-
-	#[track_caller]
-	pub fn computed<'store, T: 'static>(
-		&'store self, fun: impl FnMut() -> T + 'store,
-	) -> ROSignal<'store, T> {
-		self.computed_manual(fun, Location::caller())
-	}
-
-	pub fn status_of<T: 'static>(&self, id: PropId<T>) -> PropStatus {
-		let Ok(prop) = self.get_prop(id.0) else { return PropStatus::Removed };
-		prop.status()
-	}
-	pub fn has_live_refs(&self) -> bool {
-		self.ref_count.get() != 0
+	pub fn computed<T: 'static>(
+		ctx: &mut Ctx, fun: impl FnMut(&mut Ctx) -> T + 'static,
+	) -> PropId<T> {
+		Self::computed_manual(ctx, fun, Location::caller())
 	}
 
 	pub fn is_tracking(&self) -> bool {
@@ -262,44 +215,18 @@ impl Store {
 			}
 		}
 	}
-	pub fn track_write<T: 'static>(&self, id: PropId<T>) {
-		if let Some(tracking) = self.tracking.borrow_mut().deref_mut() {
+	fn _track_write<T: 'static>(tracking: &RefCell<Option<TrackResult>>, id: PropId<T>) {
+		if let Some(tracking) = tracking.borrow_mut().deref_mut() {
 			if !tracking.written.contains(&id.erase_type()) {
 				tracking.written.push(id.erase_type());
 			}
 		}
+	}
+	pub fn track_write<T: 'static>(&self, id: PropId<T>) {
+		Self::_track_write(&self.tracking, id);
 	}
 
 	pub fn force_update<T: 'static>(&self, id: PropId<T>) {
 		todo!()
 	}
 }
-
-pub trait Ids {
-	type Signals<'scope>;
-	fn revive(store: &Store, ids: Self) -> Self::Signals<'_>;
-}
-impl<T: 'static> Ids for PropId<T> {
-	type Signals<'scope> = Signal<'scope, T>;
-	fn revive(store: &Store, id: Self) -> Self::Signals<'_> {
-		Signal { store, prop: id }
-	}
-}
-macro_rules! id_tuple {
-	[$($item:ident : $ind:tt),*] => {
-		impl<$($item: 'static),*> Ids for ($(PropId<$item>),*,) {
-			type Signals<'scope> = ($(Signal<'scope, $item>),*,);
-			fn revive(store: &Store, ids: Self) -> Self::Signals<'_> {
-				($(Signal { store, prop: ids.$ind }),*,)
-			}
-		}
-	};
-}
-id_tuple![A: 0];
-id_tuple![A: 0, B: 1];
-id_tuple![A: 0, B: 1, C: 2];
-id_tuple![A: 0, B: 1, C: 2, D: 3];
-id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4];
-id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4, F: 5];
-id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6];
-id_tuple![A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6, H: 7];

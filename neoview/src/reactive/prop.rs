@@ -1,6 +1,4 @@
 use std::{
-	any::Any,
-	cell::{Cell, UnsafeCell},
 	fmt::{Debug, Display},
 	hash::Hash,
 	marker::PhantomData,
@@ -78,86 +76,5 @@ impl Display for SlabId {
 impl Debug for SlabId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "SlabId({:#})", self)
-	}
-}
-
-#[derive(Debug)]
-pub struct Prop {
-	value: UnsafeCell<Box<dyn Any>>,
-	pending_value: UnsafeCell<Option<Box<dyn Any>>>,
-	ref_count: Cell<u32>,
-	in_mut: Cell<bool>,
-}
-impl Prop {
-	pub fn new<T: 'static>(value: T) -> Self {
-		Self {
-			value: UnsafeCell::new(Box::new(value)),
-			pending_value: UnsafeCell::new(None),
-			ref_count: Cell::new(0),
-			in_mut: Cell::new(false),
-		}
-	}
-	pub fn get<T: 'static>(&self) -> Option<&T> {
-		if self.in_mut.get() {
-			return None;
-		}
-		self.ref_count.update(|c| c + 1);
-		unsafe { &*self.value.get() }.downcast_ref()
-	}
-	pub fn set<T: 'static>(&self, value: T) {
-		if self.ref_count.get() == 0 {
-			*unsafe { &mut *self.value.get() }.downcast_mut().unwrap() = value
-		} else {
-			let pending = unsafe { &mut *self.pending_value.get() };
-			if let Some(pending) = pending {
-				*pending.downcast_mut().unwrap() = value
-			} else {
-				*pending = Some(Box::new(value));
-			}
-		}
-	}
-	pub fn get_mut<T: 'static>(&self) -> Option<&mut T> {
-		if self.ref_count.get() != 0 {
-			return None;
-		}
-		self.in_mut.set(true);
-		self.ref_count.update(|c| c + 1);
-		unsafe { &mut *self.value.get() }.downcast_mut()
-	}
-	pub fn unref(&self, is_mut: bool) {
-		if is_mut {
-			self.in_mut.set(false)
-		}
-		self.ref_count.update(|c| c - 1);
-		if self.ref_count.get() == 0
-			&& let Some(pending) = unsafe { &mut *self.pending_value.get() }.take()
-		{
-			*unsafe { &mut *self.value.get() } = pending;
-		}
-	}
-	pub fn status(&self) -> PropStatus {
-		if self.ref_count.get() == 0 {
-			PropStatus::Idle
-		} else if self.in_mut.get() {
-			PropStatus::Mut
-		} else {
-			PropStatus::Ref
-		}
-	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PropStatus {
-	Idle,
-	Ref,
-	Mut,
-	Removed,
-}
-impl PropStatus {
-	pub fn is_removed(&self) -> bool {
-		matches!(self, PropStatus::Removed)
-	}
-	pub fn is_used(&self) -> bool {
-		matches!(self, PropStatus::Ref | PropStatus::Mut)
 	}
 }
