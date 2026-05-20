@@ -1,21 +1,18 @@
 use std::{cell::RefMut, panic::Location};
 
-use crate::{
-	context::Context,
-	reactive::{
-		Error, PropId, SlabId, Store,
-		prop::ItemId,
-		signal::{ROSignal, Signal, WOSignal},
-		struct_change_while_life_refs,
-	},
+use crate::reactive::{
+	Error, PropId, SlabId, Store,
+	prop::ItemId,
+	signal::{ROSignal, Signal, WOSignal},
+	struct_change_while_life_refs,
 };
 
-pub struct Slab<'store, Ctx: Context> {
-	pub(crate) store: &'store Store<Ctx>,
+pub struct Slab<'store> {
+	pub(crate) store: &'store Store,
 	pub(crate) id: SlabId,
 }
-impl<'store, Ctx: Context> Slab<'store, Ctx> {
-	pub fn store(&self) -> &Store<Ctx> {
+impl<'store> Slab<'store> {
+	pub fn store(&self) -> &Store {
 		self.store
 	}
 	pub fn id(&self) -> SlabId {
@@ -35,27 +32,27 @@ impl<'store, Ctx: Context> Slab<'store, Ctx> {
 		id
 	}
 
-	pub fn signal<'scope, T: 'static>(&'scope self, value: T) -> Signal<'scope, T, Ctx> {
+	pub fn signal<'scope, T: 'static>(&'scope self, value: T) -> Signal<'scope, T> {
 		let id = self.add_prop_panicing(value);
 		Signal { store: self.store, prop: id }
 	}
-	pub fn ro_signal<'scope, T: 'static>(&'scope self, value: T) -> ROSignal<'scope, T, Ctx> {
+	pub fn ro_signal<'scope, T: 'static>(&'scope self, value: T) -> ROSignal<'scope, T> {
 		let id = self.add_prop_panicing(value);
 		ROSignal { store: self.store, prop: id }
 	}
-	pub fn wo_signal<'scope, T: 'static>(&'scope self, value: T) -> WOSignal<'scope, T, Ctx> {
+	pub fn wo_signal<'scope, T: 'static>(&'scope self, value: T) -> WOSignal<'scope, T> {
 		let id = self.add_prop_panicing(value);
 		WOSignal { store: self.store, prop: id }
 	}
 
 	#[track_caller]
-	pub fn effect(&self, fun: impl FnMut(&Ctx) + 'store) {
+	pub fn effect(&self, fun: impl FnMut() + 'store) {
 		let id = self.store().add_effect(fun, Location::caller());
 		self.slab().effects.push(id);
 	}
 	#[track_caller]
 	pub fn effect_manual(
-		&self, read: Vec<PropId<()>>, write: Vec<PropId<()>>, fun: impl FnMut(&Ctx) + 'store,
+		&self, read: Vec<PropId<()>>, write: Vec<PropId<()>>, fun: impl FnMut() + 'store,
 	) {
 		let id = self.store().add_effect_manual(read, write, fun, Location::caller());
 		self.slab().effects.push(id);

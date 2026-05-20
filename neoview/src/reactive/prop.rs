@@ -1,7 +1,7 @@
 use std::{
 	any::Any,
 	cell::{Cell, UnsafeCell},
-	fmt::{Debug, Display, LowerHex},
+	fmt::{Debug, Display},
 	hash::Hash,
 	marker::PhantomData,
 };
