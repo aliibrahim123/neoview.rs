@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, marker::PhantomData, ops::DerefMut, panic::Location, ptr};
+use std::{any::Any, cell::RefCell, marker::PhantomData, ops::DerefMut, ptr};
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
@@ -233,20 +233,23 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 	pub fn end_track(&self) -> Result<TrackResult, Error> {
-		self.tracking.take().ok_or(Error::NotTracking)
+		let mut result = self.tracking.take().ok_or(Error::NotTracking)?;
+
+		result.read.sort_unstable();
+		result.read.dedup();
+		result.written.sort_unstable();
+		result.written.dedup();
+
+		Ok(result)
 	}
 	pub fn track_read<T: 'static>(&self, id: PropId<T>) {
 		if let Some(tracking) = self.tracking.borrow_mut().deref_mut() {
-			if !tracking.read.contains(&id.erase_type()) {
-				tracking.read.push(id.erase_type());
-			}
+			tracking.read.push(id.erase_type());
 		}
 	}
 	fn _track_write<T: 'static>(tracking: &RefCell<Option<TrackResult>>, id: PropId<T>) {
 		if let Some(tracking) = tracking.borrow_mut().deref_mut() {
-			if !tracking.written.contains(&id.erase_type()) {
-				tracking.written.push(id.erase_type());
-			}
+			tracking.written.push(id.erase_type());
 		}
 	}
 	pub fn track_write<T: 'static>(&self, id: PropId<T>) {
