@@ -32,8 +32,10 @@ impl TrackResult {
 #[derive(Debug)]
 pub struct Store<Ctx> {
 	pub(crate) props: SlotMap<ItemId, Box<dyn Any>>,
+
 	pub(crate) slabs: FxHashMap<SlabId, SlabData>,
 	next_slab: SlabId,
+	slabs_to_remove: Vec<SlabId>,
 
 	pub(crate) updater: Updater<Ctx>,
 
@@ -46,6 +48,7 @@ impl<Ctx: Context> Default for Store<Ctx> {
 			props: SlotMap::default(),
 			slabs: FxHashMap::default(),
 			next_slab: SlabId(0),
+			slabs_to_remove: Vec::new(),
 			updater: Updater::default(),
 			tracking: RefCell::new(None),
 			_marker: PhantomData,
@@ -59,36 +62,41 @@ impl<Ctx> PartialEq for Store<Ctx> {
 }
 impl<Ctx> Eq for Store<Ctx> {}
 impl<Ctx: Context> Store<Ctx> {
-	pub fn add_slab(&mut self) -> SlabId {
+	pub fn create_slab(&mut self) -> SlabId {
 		let id = self.next_slab;
 		self.slabs.insert(id, SlabData::default());
 		self.next_slab = SlabId(id.0 + 1);
 		id
 	}
 	pub fn remove_slab(&mut self, id: SlabId) -> Result<(), Error> {
-		let slab = self.slabs.get(&id).ok_or(Error::Removed)?;
+		if !self.slabs.contains_key(&id) || self.slabs_to_remove.contains(&id) {
+			return Err(Error::Removed);
+		}
 
+		if self.updater.is_updating {
+			self.slabs_to_remove.push(id);
+		} else {
+			self._remove_slab(id);
+		}
+		Ok(())
+	}
+	fn _remove_slab(&mut self, id: SlabId) {
+		let slab = &self.slabs.remove(&id).unwrap();
 		for id in &slab.props {
 			self.props.remove(*id);
 		}
-
 		self.updater.remove_items(&slab.effects, &slab.props);
-
-		self.slabs.remove(&id);
-		Ok(())
 	}
 
-	pub fn create_prop<T: 'static>(&mut self, value: T) -> PropId<T> {
+	pub fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
 		let id = self.props.insert(Box::new(value));
 		PropId::new(id)
 	}
-	pub fn create_prop_in<T: 'static>(
-		&mut self, slab: SlabId, value: T,
-	) -> Result<PropId<T>, Error> {
+	pub fn prop_in<T: 'static>(&mut self, slab: SlabId, value: T) -> Result<PropId<T>, Error> {
 		if !self.slabs.contains_key(&slab) {
 			return Err(Error::Removed);
 		}
-		let id = self.create_prop(value);
+		let id = self.prop(value);
 		self.slabs.get_mut(&slab).unwrap().props.push(id.0);
 		Ok(id)
 	}
@@ -124,6 +132,7 @@ impl<Ctx: Context> Store<Ctx> {
 	pub fn try_read_mut<T: 'static>(&mut self, id: PropId<T>) -> Option<&mut T> {
 		let prop = self.props.get_mut(id.0)?.downcast_mut()?;
 		Self::_track_write(&self.tracking, id);
+		self.updater.push_update(id.0);
 		Some(prop)
 	}
 	pub fn read_mut<T: 'static>(&mut self, id: PropId<T>) -> &mut T {
@@ -134,10 +143,24 @@ impl<Ctx: Context> Store<Ctx> {
 		let prop = self.props.get_mut(id.0).ok_or(Error::Removed)?;
 		*prop.downcast_mut().unwrap() = value;
 		self.track_write(id);
+		self.updater.push_update(id.0);
 		Ok(())
 	}
 	pub fn write<T: 'static>(&mut self, id: PropId<T>, value: T) {
 		self.try_write(id, value).expect("writing removed property");
+	}
+
+	pub fn try_update<T: 'static>(
+		&mut self, id: PropId<T>, fun: impl FnOnce(&mut T),
+	) -> Result<(), Error> {
+		let prop = self.props.get_mut(id.0).ok_or(Error::Removed)?;
+		fun(prop.downcast_mut().unwrap());
+		self.track_write(id);
+		self.updater.push_update(id.0);
+		Ok(())
+	}
+	pub fn update<T: 'static>(&mut self, id: PropId<T>, fun: impl FnOnce(&mut T)) {
+		self.try_update(id, fun).expect("updating removed property");
 	}
 
 	#[track_caller]
@@ -167,7 +190,7 @@ impl<Ctx: Context> Store<Ctx> {
 
 	pub(crate) fn computed_manual<T: 'static>(
 		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) -> T + 'static, loc: &'static Location,
-	) -> PropId<T> {
+	) -> (PropId<T>, ItemId) {
 		start_track_panicing(ctx.store_ref());
 		let value = fun(ctx);
 		let store = ctx.store();
@@ -177,22 +200,32 @@ impl<Ctx: Context> Store<Ctx> {
 			panic!("computed properties can not write any properties");
 		}
 
-		let id = store.create_prop(value);
+		let id = store.prop(value);
 
 		let fun = move |ctx: &mut Ctx| {
 			let value = fun(ctx);
 			ctx.store().write(id, value);
 		};
-		Updater::add_effect(ctx, fun, Some((read, vec![id.erase_type()])), loc);
+		let effect = Updater::add_effect(ctx, fun, Some((read, vec![id.erase_type()])), loc);
 
-		id
+		(id, effect)
 	}
 
 	#[track_caller]
 	pub fn computed<T: 'static>(
 		ctx: &mut Ctx, fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> PropId<T> {
-		Self::computed_manual(ctx, fun, Location::caller())
+		Self::computed_manual(ctx, fun, Location::caller()).0
+	}
+	#[track_caller]
+	pub fn computed_in<T: 'static>(
+		ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) -> T + 'static,
+	) -> PropId<T> {
+		let (id, effect) = Self::computed_manual(ctx, fun, Location::caller());
+		let slab = ctx.store().slabs.get_mut(&slab).unwrap();
+		slab.effects.push(effect);
+		slab.props.push(id.0);
+		id
 	}
 
 	pub fn is_tracking(&self) -> bool {
@@ -226,7 +259,23 @@ impl<Ctx: Context> Store<Ctx> {
 		Self::_track_write(&self.tracking, id);
 	}
 
-	pub fn force_update<T: 'static>(&self, id: PropId<T>) {
-		todo!()
+	pub fn is_updating(&self) -> bool {
+		self.updater.is_updating
+	}
+
+	pub fn force_update<T: 'static>(&mut self, id: PropId<T>) {
+		if !self.updater.dirty_props.contains(&id.0) {
+			self.updater.dirty_props.push(id.0);
+		}
+	}
+	pub fn flush_updates(ctx: &mut Ctx) {
+		Updater::update(ctx);
+
+		let store = ctx.store();
+		for ind in 0..store.slabs_to_remove.len() {
+			let slab = store.slabs_to_remove[ind];
+			store._remove_slab(slab);
+		}
+		store.slabs_to_remove.clear();
 	}
 }
