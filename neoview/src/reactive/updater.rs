@@ -1,6 +1,6 @@
 use std::{cell::UnsafeCell, fmt::Debug, panic::Location};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::SlotMap;
 use smallvec::SmallVec;
 
@@ -11,14 +11,12 @@ use crate::{
 
 pub struct Effect<Ctx> {
 	fun: Option<Box<dyn FnMut(&mut Ctx)>>,
-	loc: &'static Location<'static>,
 	read: Vec<ItemId>,
 	write: Vec<ItemId>,
 }
 impl<Ctx> Debug for Effect<Ctx> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Effect")
-			.field("loc", &self.loc)
 			.field("read", &self.read)
 			.field("write", &self.write)
 			.finish()
@@ -52,12 +50,14 @@ impl<Ctx: Context> Updater<Ctx> {
 
 	pub fn add_effect(
 		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) + 'static,
-		deps: Option<(Vec<PropId<()>>, Vec<PropId<()>>)>, loc: &'static Location,
+		deps: Option<(Vec<PropId<()>>, Vec<PropId<()>>)>, run_fn: bool,
 	) -> ItemId {
 		if deps.is_none() {
 			start_track_panicing(ctx.store_ref());
 		}
-		fun(ctx);
+		if run_fn {
+			fun(ctx)
+		}
 
 		let store = ctx.store();
 
@@ -69,7 +69,7 @@ impl<Ctx: Context> Updater<Ctx> {
 		let read = read.into_iter().map(|id| id.0).collect();
 
 		let updater = &mut store.updater;
-		let id = updater.effects.insert(Effect { fun: Some(Box::new(fun)), loc, write, read });
+		let id = updater.effects.insert(Effect { fun: Some(Box::new(fun)), write, read });
 
 		for &read in &store.updater.effects[id].read {
 			store.updater.read_deps.entry(read).or_default().push(id);
@@ -84,9 +84,10 @@ impl<Ctx: Context> Updater<Ctx> {
 			let updater = &mut ctx.store().updater;
 
 			let mut to_run = Vec::new();
+			let mut visited = FxHashSet::default();
 			let mut visiting = Vec::new();
 			for &prop in &updater.dirty_props {
-				visit(updater, prop, &mut to_run, &mut visiting);
+				visit(updater, prop, &mut to_run, &mut visited, &mut visiting);
 			}
 
 			updater.dirty_props.clear();
@@ -100,23 +101,25 @@ impl<Ctx: Context> Updater<Ctx> {
 
 		fn visit<Ctx: Context>(
 			updater: &Updater<Ctx>, prop: ItemId, to_run: &mut Vec<ItemId>,
-			visiting: &mut Vec<ItemId>,
+			visited: &mut FxHashSet<ItemId>, visiting: &mut Vec<ItemId>,
 		) {
 			let Some(effects) = updater.read_deps.get(&prop) else { return };
-			for effect in effects {
-				if visiting.contains(effect) {
+			for &effect in effects {
+				if visiting.contains(&effect) {
 					panic!("detected circular dependency in an update");
 				}
-				if to_run.contains(effect) {
+				if visited.contains(&effect) {
 					continue;
 				}
-				visiting.push(*effect);
-				let def = &updater.effects[*effect];
-				for &prop in &def.write {
-					visit(updater, prop, to_run, visiting);
+
+				visiting.push(effect);
+				for &prop in &updater.effects[effect].write {
+					visit(updater, prop, to_run, visited, visiting);
 				}
 				visiting.pop();
-				to_run.push(*effect);
+
+				to_run.push(effect);
+				visited.insert(effect);
 			}
 		}
 	}

@@ -163,33 +163,29 @@ impl<Ctx: Context> Store<Ctx> {
 		self.try_update(id, fun).expect("updating removed property");
 	}
 
-	#[track_caller]
 	pub fn effect(ctx: &mut Ctx, fun: impl FnMut(&mut Ctx) + 'static) {
-		Updater::add_effect(ctx, fun, None, Location::caller());
+		Updater::add_effect(ctx, fun, None, true);
 	}
-	#[track_caller]
 	pub fn effect_manual(
 		ctx: &mut Ctx, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 		fun: impl FnMut(&mut Ctx) + 'static,
 	) {
-		Updater::add_effect(ctx, fun, Some((read, write)), Location::caller());
+		Updater::add_effect(ctx, fun, Some((read, write)), true);
 	}
-	#[track_caller]
 	pub fn effect_in(ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) + 'static) {
-		let id = Updater::add_effect(ctx, fun, None, Location::caller());
+		let id = Updater::add_effect(ctx, fun, None, true);
 		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
 	}
-	#[track_caller]
 	pub fn effect_manual_in(
 		ctx: &mut Ctx, slab: SlabId, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 		fun: impl FnMut(&mut Ctx) + 'static,
 	) {
-		let id = Updater::add_effect(ctx, fun, Some((read, write)), Location::caller());
+		let id = Updater::add_effect(ctx, fun, Some((read, write)), true);
 		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
 	}
 
 	pub(crate) fn computed_manual<T: 'static>(
-		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) -> T + 'static, loc: &'static Location,
+		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> (PropId<T>, ItemId) {
 		start_track_panicing(ctx.store_ref());
 		let value = fun(ctx);
@@ -206,22 +202,20 @@ impl<Ctx: Context> Store<Ctx> {
 			let value = fun(ctx);
 			ctx.store().write(id, value);
 		};
-		let effect = Updater::add_effect(ctx, fun, Some((read, vec![id.erase_type()])), loc);
+		let effect = Updater::add_effect(ctx, fun, Some((read, vec![id.erase_type()])), false);
 
 		(id, effect)
 	}
 
-	#[track_caller]
 	pub fn computed<T: 'static>(
 		ctx: &mut Ctx, fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> PropId<T> {
-		Self::computed_manual(ctx, fun, Location::caller()).0
+		Self::computed_manual(ctx, fun).0
 	}
-	#[track_caller]
 	pub fn computed_in<T: 'static>(
 		ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> PropId<T> {
-		let (id, effect) = Self::computed_manual(ctx, fun, Location::caller());
+		let (id, effect) = Self::computed_manual(ctx, fun);
 		let slab = ctx.store().slabs.get_mut(&slab).unwrap();
 		slab.effects.push(effect);
 		slab.props.push(id.0);
