@@ -111,6 +111,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 
 	let mut children = Vec::new();
 	if let Some(mut cur) = cur.try_enter_group(Delimiter::Brace) {
+		has_body = true;
 		children = parse_children(&mut cur)?;
 	}
 

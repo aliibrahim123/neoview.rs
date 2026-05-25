@@ -37,7 +37,7 @@ fn encode_node(codes: &mut TokenStream, node: Node) {
 			}
 
 			codes.extend(quote! {
-				let child = { #el_codes };
+				let child = { #el_codes el };
 				__buildcode::end_el!(build, el, child, #tag);
 			});
 		}

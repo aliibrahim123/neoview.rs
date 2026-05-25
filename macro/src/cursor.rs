@@ -108,13 +108,14 @@ impl Cursor {
 	pub fn try_multi_punct<const N: usize>(&mut self, chars: [char; N]) -> Option<[Span; N]> {
 		let mut spans = [Span::call_site(); N];
 		for i in 0..N - 1 {
+			self.peek_next(i);
 			if let Token::Punct(char, span, Spacing::Joint) = self.peek_next(i)
 				&& *char == chars[i]
 			{
 				spans[i] = *span;
 				continue;
 			}
-			break;
+			return None;
 		}
 		if let Token::Punct(char, span, _) = self.peek_next(N - 1)
 			&& *char == chars[N - 1]
