@@ -1,4 +1,4 @@
-use proc_macro2::{Delimiter, Group, Ident, Spacing, Span, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Ident, Span, TokenStream, TokenTree};
 use quote::{ToTokens, TokenStreamExt, quote};
 
 use crate::cursor::{Cursor, Error, Token, err};
@@ -23,7 +23,7 @@ impl ToTokens for Path {
 #[derive(Debug)]
 pub enum Node {
 	Element(Element),
-	DoBlock(Group),
+	DoBlock(TokenStream),
 	Content(Vec<TokenTree>),
 }
 
@@ -60,7 +60,7 @@ fn parse_children(cur: &mut Cursor) -> Result<Vec<Node>, Error> {
 	while !cur.is_end() {
 		if cur.try_kw("do") {
 			let block = cur.group(Delimiter::Brace)?;
-			children.push(Node::DoBlock(block));
+			children.push(Node::DoBlock(block.stream()));
 		} else if let Some(el) = try_parse_el(cur)? {
 			children.push(Node::Element(el));
 			if !matches!(cur.peek(), Token::Punct(',', _, _)) {

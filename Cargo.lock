@@ -6,6 +6,7 @@ version = 4
 name = "neoview"
 version = "0.0.1"
 dependencies = [
+ "neoview-macro",
  "rustc-hash",
  "slotmap",
  "smallvec",
