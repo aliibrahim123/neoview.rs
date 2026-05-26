@@ -1,6 +1,7 @@
 use std::{
 	cell::{Ref, RefCell, RefMut},
 	rc::{Rc, Weak},
+	sync::atomic::{AtomicU64, Ordering},
 };
 
 use neoview::{
@@ -13,6 +14,12 @@ use web_sys::Element;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContextId(u64);
+impl ContextId {
+	fn next() -> Self {
+		static COUNTER: AtomicU64 = AtomicU64::new(0);
+		Self(COUNTER.fetch_add(1, Ordering::Relaxed))
+	}
+}
 
 #[derive(Debug)]
 pub struct DomContext {
@@ -75,6 +82,9 @@ impl Drop for CtxHandle {
 	}
 }
 
+pub fn new_ctx(root_el: Element) -> CtxHandle {
+	CtxHandle::new(DomContext { id: ContextId::next(), root_el, store: Default::default() })
+}
 pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 	CTX_MAP.with_borrow(|map| map.get(&id).and_then(Weak::upgrade).map(|ctx| CtxHandle { ctx }))
 }
