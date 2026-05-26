@@ -12,7 +12,6 @@ pub trait StoreProv {
 	fn store_ref(&self) -> &Store<Self::Ctx> {
 		self.ctx_ref().store_ref()
 	}
-
 	fn try_peek<T: 'static>(&self, id: PropId<T>) -> Option<&T> {
 		self.store_ref().try_peek(id)
 	}
@@ -130,25 +129,3 @@ pub trait ScopedStoreProv: StoreProv {
 		}
 	}
 }
-
-#[derive(Debug, PartialEq, Eq, Default)]
-pub struct VoidContext {
-	store: Store<Self>,
-}
-impl StoreProv for VoidContext {
-	type Ctx = Self;
-	fn ctx(&mut self) -> &mut Self::Ctx {
-		self
-	}
-	fn ctx_ref(&self) -> &Self::Ctx {
-		self
-	}
-	fn store(&mut self) -> &mut Store<Self::Ctx> {
-		&mut self.store
-	}
-	fn store_ref(&self) -> &Store<Self::Ctx> {
-		&self.store
-	}
-}
-impl GlobalStoreProv for VoidContext {}
-impl Context for VoidContext {}

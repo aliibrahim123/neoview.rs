@@ -21,13 +21,14 @@ impl Buf {
 			there_input = value != 0;
 		}
 	}
-	pub fn push_str(&mut self, string: &str) {
-		match COMMON_NAMES.binary_search(&string) {
+	pub fn push_str(&mut self, str: &str) {
+		self.push_vuint(str.len() as u64);
+		self.push_slice(str.as_bytes());
+	}
+	pub fn push_name(&mut self, str: &str) {
+		match COMMON_NAMES.binary_search(&str) {
 			Ok(id) => self.push_vuint((id << 1) as u64 | 1),
-			Err(id) => {
-				self.push_vuint((id << 1) as u64);
-				self.push_slice(string.as_bytes());
-			}
+			Err(_) => self.push_str(str),
 		}
 	}
 }
