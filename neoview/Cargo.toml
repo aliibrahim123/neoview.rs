@@ -1,6 +1,6 @@
 [package]
 name = "neoview"
-description = "a lightweight, agnostic and safe declarative UI framework"
+description = "a reactive, lightweight and safe declarative UI framework"
 edition = "2024"
 version = "0.0.1"
 readme = "../readme.md"
