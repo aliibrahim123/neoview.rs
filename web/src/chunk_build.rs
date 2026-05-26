@@ -1,20 +1,44 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+	ops::{Deref, DerefMut},
+	sync::atomic::{AtomicU64, Ordering},
+};
 
 use neoview::{
 	prelude::{ScopedStoreProv, StoreProv},
 	reactive::SlabId,
 };
 use wasm_bindgen::prelude::JsValue;
+use web_sys::Element;
 
-use crate::{context::DomContext, wire::Buf};
+use crate::{binder, context::DomContext, wire::Buf};
 
 #[derive(Debug)]
 pub struct ChunkBuild<'ctx> {
 	ctx: &'ctx mut DomContext,
 	slab: Option<SlabId>,
+	base_el: Element,
 	build_codes: Buf,
 	el_stack: Vec<u64>,
 	args: Vec<JsValue>,
+}
+impl<'ctx> ChunkBuild<'ctx> {
+	pub(crate) fn new(ctx: &'ctx mut DomContext, slab: Option<SlabId>, base_el: Element) -> Self {
+		Self {
+			ctx,
+			slab,
+			base_el,
+			build_codes: Buf::default(),
+			el_stack: vec![binder::next_el_id()],
+			args: Vec::new(),
+		}
+	}
+	pub fn base_el(&self) -> Element {
+		self.base_el.clone()
+	}
+	pub fn finish(self) -> Element {
+		binder::construct(&self.base_el, self.build_codes.0, self.args);
+		self.base_el
+	}
 }
 impl StoreProv for ChunkBuild<'_> {
 	type Ctx = DomContext;
@@ -28,6 +52,32 @@ impl StoreProv for ChunkBuild<'_> {
 impl ScopedStoreProv for ChunkBuild<'_> {
 	fn slab(&self) -> Option<SlabId> {
 		self.slab
+	}
+}
+
+#[derive(Debug)]
+pub struct RemovableChunk<'ctx> {
+	build: ChunkBuild<'ctx>,
+	id: u64,
+}
+impl<'ctx> RemovableChunk<'ctx> {
+	pub fn new(ctx: &'ctx mut DomContext, base_el: Element) -> Self {
+		let slab = ctx.store().create_slab();
+		Self { build: ChunkBuild::new(ctx, Some(slab), base_el), id: binder::next_chunk_id() }
+	}
+	pub fn finish(self) -> (Element, impl FnOnce()) {
+		(self.build.finish(), move || binder::remove_chunk(self.id))
+	}
+}
+impl<'ctx> Deref for RemovableChunk<'ctx> {
+	type Target = ChunkBuild<'ctx>;
+	fn deref(&self) -> &Self::Target {
+		&self.build
+	}
+}
+impl<'ctx> DerefMut for RemovableChunk<'ctx> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.build
 	}
 }
 
@@ -49,9 +99,8 @@ impl<'ctx> ChunkBuild<'ctx> {
 	}
 	#[doc(hidden)]
 	pub fn __el_id(&mut self) {
-		static CUR_ID: AtomicU64 = AtomicU64::new(1);
 		self.build_codes.push(Self::EL_ID);
-		self.el_stack.push(CUR_ID.fetch_add(1, Ordering::Relaxed));
+		self.el_stack.push(binder::next_el_id());
 	}
 	#[doc(hidden)]
 	pub fn __attr(&mut self, name: &str, value: &str) {

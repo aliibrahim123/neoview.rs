@@ -10,7 +10,9 @@ use neoview::{
 	reactive::Store,
 };
 use rustc_hash::FxHashMap;
-use web_sys::Element;
+use web_sys::{Document, Element, window};
+
+use crate::{ChunkBuild, chunk_build::RemovableChunk};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContextId(u64);
@@ -20,16 +22,44 @@ impl ContextId {
 		Self(COUNTER.fetch_add(1, Ordering::Relaxed))
 	}
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CtxOptions {
+	pub remove_on_drop: bool,
+}
+impl Default for CtxOptions {
+	fn default() -> Self {
+		Self { remove_on_drop: true }
+	}
+}
+pub fn new_ctx(root_el: Element, opts: CtxOptions) -> CtxHandle {
+	CtxHandle::new(DomContext {
+		id: ContextId::next(),
+		options: opts,
+		root_el,
+		store: Default::default(),
+	})
+}
 
 #[derive(Debug)]
 pub struct DomContext {
 	id: ContextId,
+	options: CtxOptions,
 	root_el: Element,
 	store: Store<Self>,
 }
 impl DomContext {
 	pub fn root_el(&self) -> Element {
 		self.root_el.clone()
+	}
+	pub fn root_chunk(&mut self) -> ChunkBuild<'_> {
+		ChunkBuild::new(self, None, self.root_el.clone())
+	}
+	pub fn new_chunk(&mut self, base_el: Element) -> ChunkBuild<'_> {
+		ChunkBuild::new(self, None, base_el)
+	}
+	pub fn removable_chunk(&mut self, tag: &str) -> RemovableChunk<'_> {
+		let el = window().unwrap().document().unwrap().create_element(tag).unwrap();
+		RemovableChunk::new(self, el)
 	}
 }
 impl Context for DomContext {}
@@ -49,6 +79,13 @@ impl StoreProv for DomContext {
 	}
 }
 impl GlobalStoreProv for DomContext {}
+impl Drop for DomContext {
+	fn drop(&mut self) {
+		if self.options.remove_on_drop {
+			self.root_el.remove();
+		}
+	}
+}
 
 thread_local!(
 	static CTX_MAP: RefCell<FxHashMap<ContextId, Weak<RefCell<DomContext>>>> = Default::default();
@@ -80,10 +117,6 @@ impl Drop for CtxHandle {
 			CTX_MAP.with_borrow_mut(|map| map.remove(&id));
 		}
 	}
-}
-
-pub fn new_ctx(root_el: Element) -> CtxHandle {
-	CtxHandle::new(DomContext { id: ContextId::next(), root_el, store: Default::default() })
 }
 pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 	CTX_MAP.with_borrow(|map| map.get(&id).and_then(Weak::upgrade).map(|ctx| CtxHandle { ctx }))
