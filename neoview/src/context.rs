@@ -1,13 +1,18 @@
-use crate::reactive::{Error, PropId, Store};
+use crate::reactive::{Error, PropId, SlabId, Store};
 
-pub trait Context: Sized {
-	fn store(&mut self) -> &mut Store<Self>;
-	fn store_ref(&self) -> &Store<Self>;
-}
-pub trait ContextStoreExt: Context {
-	fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
-		self.store().prop(value)
+pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
+
+pub trait StoreProv {
+	type Ctx: Context;
+	fn ctx(&mut self) -> &mut Self::Ctx;
+	fn ctx_ref(&self) -> &Self::Ctx;
+	fn store(&mut self) -> &mut Store<Self::Ctx> {
+		self.ctx().store()
 	}
+	fn store_ref(&self) -> &Store<Self::Ctx> {
+		self.ctx_ref().store_ref()
+	}
+
 	fn try_peek<T: 'static>(&self, id: PropId<T>) -> Option<&T> {
 		self.store_ref().try_peek(id)
 	}
@@ -46,30 +51,104 @@ pub trait ContextStoreExt: Context {
 	fn update<T: 'static>(&mut self, id: PropId<T>, fun: impl FnOnce(&mut T)) {
 		self.store().update(id, fun)
 	}
-	fn effect(&mut self, fun: impl FnMut(&mut Self) + 'static) {
-		Store::effect(self, fun);
+}
+
+pub trait GlobalStoreProv: StoreProv {
+	fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
+		self.store().prop(value)
+	}
+	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
+		Store::effect(self.ctx(), fun);
 	}
 	fn effect_manual(
 		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
-		fun: impl FnMut(&mut Self) + 'static,
+		fun: impl FnMut(&mut Self::Ctx) + 'static,
 	) {
-		Store::effect_manual(self, read, write, fun);
+		Store::effect_manual(self.ctx(), read, write, fun);
 	}
-	fn computed<T: 'static>(&mut self, fun: impl FnMut(&mut Self) -> T + 'static) -> PropId<T> {
-		Store::computed(self, fun)
+	fn computed<T: 'static>(
+		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
+	) -> PropId<T> {
+		Store::computed(self.ctx(), fun)
 	}
 }
-impl<Ctx: Context> ContextStoreExt for Ctx {}
+
+pub trait LocalStoreProv: StoreProv {
+	fn slab(&self) -> SlabId;
+	fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
+		let slab = self.slab();
+		self.store().prop_in(slab, value).unwrap()
+	}
+	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
+		let slab = self.slab();
+		Store::effect_in(self.ctx(), slab, fun).unwrap();
+	}
+	fn effect_manual(
+		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+		fun: impl FnMut(&mut Self::Ctx) + 'static,
+	) {
+		let slab = self.slab();
+		Store::effect_manual_in(self.ctx(), slab, read, write, fun).unwrap();
+	}
+	fn computed<T: 'static>(
+		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
+	) -> PropId<T> {
+		let slab = self.slab();
+		Store::computed_in(self.ctx(), slab, fun).unwrap()
+	}
+}
+
+pub trait ScopedStoreProv: StoreProv {
+	fn slab(&self) -> Option<SlabId>;
+	fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
+		match self.slab() {
+			Some(slab) => self.store().prop_in(slab, value).unwrap(),
+			None => self.store().prop(value),
+		}
+	}
+	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
+		match self.slab() {
+			Some(slab) => Store::effect_in(self.ctx(), slab, fun).unwrap(),
+			None => Store::effect(self.ctx(), fun),
+		}
+	}
+	fn effect_manual(
+		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+		fun: impl FnMut(&mut Self::Ctx) + 'static,
+	) {
+		match self.slab() {
+			Some(slab) => Store::effect_manual_in(self.ctx(), slab, read, write, fun).unwrap(),
+			None => Store::effect_manual(self.ctx(), read, write, fun),
+		}
+	}
+	fn computed<T: 'static>(
+		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
+	) -> PropId<T> {
+		match self.slab() {
+			Some(slab) => Store::computed_in(self.ctx(), slab, fun).unwrap(),
+			None => Store::computed(self.ctx(), fun),
+		}
+	}
+}
 
 #[derive(Debug, PartialEq, Eq, Default)]
 pub struct VoidContext {
 	store: Store<Self>,
 }
-impl Context for VoidContext {
-	fn store(&mut self) -> &mut Store<Self> {
+impl StoreProv for VoidContext {
+	type Ctx = Self;
+	fn ctx(&mut self) -> &mut Self::Ctx {
+		self
+	}
+	fn ctx_ref(&self) -> &Self::Ctx {
+		self
+	}
+	fn store(&mut self) -> &mut Store<Self::Ctx> {
 		&mut self.store
 	}
-	fn store_ref(&self) -> &Store<Self> {
+	fn store_ref(&self) -> &Store<Self::Ctx> {
 		&self.store
 	}
 }
+impl GlobalStoreProv for VoidContext {}
+impl Context for VoidContext {}

@@ -23,7 +23,7 @@ pub fn encode(input: ChunkInput) -> TokenStream {
 fn encode_node(codes: &mut TokenStream, node: Node) {
 	match node {
 		Node::Content(content) => {
-			codes.extend(quote! { __buildcode::content!(build, #(#content)*); })
+			codes.extend(quote! { __buildcode::content!(build, el, #(#content)*); })
 		}
 		Node::Element(Element { tag, attrs, children }) => {
 			let mut el_codes = quote! { let el = __buildcode::start_el!(build, el, #tag); };

@@ -172,16 +172,26 @@ impl<Ctx: Context> Store<Ctx> {
 	) {
 		Updater::add_effect(ctx, fun, Some((read, write)), true);
 	}
-	pub fn effect_in(ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) + 'static) {
+	pub fn effect_in(
+		ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) + 'static,
+	) -> Result<(), Error> {
+		if !ctx.store().slabs.contains_key(&slab) {
+			return Err(Error::Removed);
+		}
 		let id = Updater::add_effect(ctx, fun, None, true);
 		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
+		Ok(())
 	}
 	pub fn effect_manual_in(
 		ctx: &mut Ctx, slab: SlabId, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 		fun: impl FnMut(&mut Ctx) + 'static,
-	) {
+	) -> Result<(), Error> {
+		if !ctx.store().slabs.contains_key(&slab) {
+			return Err(Error::Removed);
+		}
 		let id = Updater::add_effect(ctx, fun, Some((read, write)), true);
 		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
+		Ok(())
 	}
 
 	pub(crate) fn computed_manual<T: 'static>(
@@ -214,12 +224,15 @@ impl<Ctx: Context> Store<Ctx> {
 	}
 	pub fn computed_in<T: 'static>(
 		ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) -> T + 'static,
-	) -> PropId<T> {
+	) -> Result<PropId<T>, Error> {
+		if !ctx.store().slabs.contains_key(&slab) {
+			return Err(Error::Removed);
+		}
 		let (id, effect) = Self::computed_manual(ctx, fun);
 		let slab = ctx.store().slabs.get_mut(&slab).unwrap();
 		slab.effects.push(effect);
 		slab.props.push(id.0);
-		id
+		Ok(id)
 	}
 
 	pub fn is_tracking(&self) -> bool {
