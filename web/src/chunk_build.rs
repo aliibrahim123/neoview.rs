@@ -100,9 +100,14 @@ impl<'ctx> ChunkBuild<'ctx> {
 		self.el_stack.push(0);
 	}
 	#[doc(hidden)]
-	pub fn __el_id(&mut self) {
+	pub fn __request_id(&mut self) -> u64 {
+		if let Some(id) = self.el_stack.last() {
+			return *id;
+		}
+		let id = binder::next_el_id();
 		self.build_codes.push(Self::EL_ID);
-		self.el_stack.push(binder::next_el_id());
+		self.el_stack.push(id);
+		id
 	}
 	#[doc(hidden)]
 	pub fn __attr(&mut self, name: &str, value: &str) {
@@ -144,4 +149,17 @@ impl<'ctx> ChunkBuild<'ctx> {
 		self.build_codes.push(Self::END);
 		self.el_stack.pop();
 	}
+}
+
+#[doc(hidden)]
+pub mod __build_code {
+	#[macro_export]
+	#[doc(hidden)]
+	macro_rules! start_el {
+		($build:expr, $el:expr, $tag:expr) => {
+			$build.__start_el(stringify!($tag));
+		};
+	}
+
+	pub use start_el;
 }
