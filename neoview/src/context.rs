@@ -1,4 +1,4 @@
-use crate::reactive::{Error, PropId, SlabId, Store};
+use crate::{Error, PropId, SlabId, Store};
 
 pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
 

@@ -4,10 +4,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::SlotMap;
 use smallvec::SmallVec;
 
-use crate::{
-	context::Context,
-	reactive::{PropId, Store, prop::ItemId},
-};
+use crate::{PropId, Store, context::Context, prop::ItemId};
 
 pub struct Effect<Ctx> {
 	fun: Option<Box<dyn FnMut(&mut Ctx)>>,

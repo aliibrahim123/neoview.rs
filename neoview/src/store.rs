@@ -4,12 +4,10 @@ use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 
 use crate::{
+	Error, PropId, SlabId,
 	context::Context,
-	reactive::{
-		Error, PropId, SlabId,
-		prop::ItemId,
-		updater::{Updater, start_track_panicing},
-	},
+	prop::ItemId,
+	updater::{Updater, start_track_panicing},
 };
 
 #[derive(Debug, Default)]

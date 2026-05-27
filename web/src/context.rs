@@ -4,11 +4,7 @@ use std::{
 	sync::atomic::{AtomicU64, Ordering},
 };
 
-use neoview::{
-	context::Context,
-	prelude::{GlobalStoreProv, StoreProv},
-	reactive::Store,
-};
+use neoview::{Context, GlobalStoreProv, Store, StoreProv};
 use rustc_hash::FxHashMap;
 use web_sys::{Document, Element, window};
 

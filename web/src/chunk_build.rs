@@ -3,10 +3,7 @@ use std::{
 	sync::atomic::{AtomicU64, Ordering},
 };
 
-use neoview::{
-	prelude::{ScopedStoreProv, StoreProv},
-	reactive::SlabId,
-};
+use neoview::{ScopedStoreProv, SlabId, StoreProv};
 use wasm_bindgen::prelude::JsValue;
 use web_sys::Element;
 
