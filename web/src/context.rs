@@ -8,7 +8,7 @@ use neoview::{Context, GlobalStoreProv, Store, StoreProv};
 use rustc_hash::FxHashMap;
 use web_sys::{Document, Element, window};
 
-use crate::{ChunkBuild, chunk_build::RemovableChunk};
+use crate::{ChunkBuild, binder, chunk_build::RemovableChunk};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContextId(u64);
@@ -27,14 +27,6 @@ impl Default for CtxOptions {
 		Self { remove_on_drop: true }
 	}
 }
-pub fn new_ctx(root_el: Element, opts: CtxOptions) -> CtxHandle {
-	CtxHandle::new(DomContext {
-		id: ContextId::next(),
-		options: opts,
-		root_el,
-		store: Default::default(),
-	})
-}
 
 #[derive(Debug)]
 pub struct DomContext {
@@ -42,16 +34,27 @@ pub struct DomContext {
 	options: CtxOptions,
 	root_el: Element,
 	store: Store<Self>,
+	root_chunk_id: u64,
 }
 impl DomContext {
+	pub fn new(root_el: Element, opts: CtxOptions) -> CtxHandle {
+		let ctx = DomContext {
+			id: ContextId::next(),
+			options: opts,
+			root_el,
+			store: Default::default(),
+			root_chunk_id: binder::next_chunk_id(),
+		};
+		CtxHandle::new(ctx)
+	}
 	pub fn root_el(&self) -> Element {
 		self.root_el.clone()
 	}
 	pub fn root_chunk(&mut self) -> ChunkBuild<'_> {
-		ChunkBuild::new(self, None, self.root_el.clone())
+		ChunkBuild::new(self, self.root_chunk_id, None, self.root_el.clone())
 	}
 	pub fn new_chunk(&mut self, base_el: Element) -> ChunkBuild<'_> {
-		ChunkBuild::new(self, None, base_el)
+		ChunkBuild::new(self, self.root_chunk_id, None, base_el)
 	}
 	pub fn removable_chunk(&mut self, tag: &str) -> RemovableChunk<'_> {
 		let el = window().unwrap().document().unwrap().create_element(tag).unwrap();

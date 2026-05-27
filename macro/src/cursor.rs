@@ -49,6 +49,13 @@ impl ToTokens for Token {
 	}
 }
 
+macro_rules! match_punct {
+	($tok:expr, $pat:pat) => {
+		matches!($tok, Token::Punct($pat, _, _))
+	};
+}
+pub(crate) use match_punct;
+
 #[derive(Debug)]
 pub struct Cursor {
 	pub tokens: Box<[Token]>,

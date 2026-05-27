@@ -7,23 +7,30 @@ use neoview::{ScopedStoreProv, SlabId, StoreProv};
 use wasm_bindgen::prelude::JsValue;
 use web_sys::Element;
 
-use crate::{binder, context::DomContext, wire::Buf};
+use crate::{
+	binder::{self, Buf},
+	context::DomContext,
+};
 
 #[derive(Debug)]
 pub struct ChunkBuild<'ctx> {
 	ctx: &'ctx mut DomContext,
 	slab: Option<SlabId>,
 	base_el: Element,
+	pub(crate) id: u64,
 	build_codes: Buf,
 	el_stack: Vec<u64>,
 	args: Vec<JsValue>,
 }
 impl<'ctx> ChunkBuild<'ctx> {
-	pub(crate) fn new(ctx: &'ctx mut DomContext, slab: Option<SlabId>, base_el: Element) -> Self {
+	pub(crate) fn new(
+		ctx: &'ctx mut DomContext, id: u64, slab: Option<SlabId>, base_el: Element,
+	) -> Self {
 		Self {
 			ctx,
 			slab,
 			base_el,
+			id,
 			build_codes: Buf::default(),
 			el_stack: vec![binder::next_el_id()],
 			args: Vec::new(),
@@ -33,7 +40,7 @@ impl<'ctx> ChunkBuild<'ctx> {
 		self.base_el.clone()
 	}
 	pub fn finish(self) -> Element {
-		binder::construct(&self.base_el, self.build_codes.0, self.args);
+		binder::construct(&self.base_el, self.id, self.build_codes.0, self.args);
 		self.base_el
 	}
 }
@@ -53,28 +60,26 @@ impl ScopedStoreProv for ChunkBuild<'_> {
 }
 
 #[derive(Debug)]
-pub struct RemovableChunk<'ctx> {
-	build: ChunkBuild<'ctx>,
-	id: u64,
-}
+pub struct RemovableChunk<'ctx>(ChunkBuild<'ctx>);
 impl<'ctx> RemovableChunk<'ctx> {
-	pub fn new(ctx: &'ctx mut DomContext, base_el: Element) -> Self {
+	pub(crate) fn new(ctx: &'ctx mut DomContext, base_el: Element) -> Self {
 		let slab = ctx.store().create_slab();
-		Self { build: ChunkBuild::new(ctx, Some(slab), base_el), id: binder::next_chunk_id() }
+		Self(ChunkBuild::new(ctx, binder::next_chunk_id(), Some(slab), base_el))
 	}
 	pub fn finish(self) -> (Element, impl FnOnce()) {
-		(self.build.finish(), move || binder::remove_chunk(self.id))
+		let id = self.0.id;
+		(self.0.finish(), move || binder::remove_chunk(id))
 	}
 }
 impl<'ctx> Deref for RemovableChunk<'ctx> {
 	type Target = ChunkBuild<'ctx>;
 	fn deref(&self) -> &Self::Target {
-		&self.build
+		&self.0
 	}
 }
 impl<'ctx> DerefMut for RemovableChunk<'ctx> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.build
+		&mut self.0
 	}
 }
 

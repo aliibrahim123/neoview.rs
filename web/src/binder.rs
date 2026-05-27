@@ -1,4 +1,22 @@
-use std::ops::Deref;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
+use web_sys::Element;
+
+static CUR_EL_ID: AtomicU64 = AtomicU64::new(1);
+pub fn next_el_id() -> u64 {
+	CUR_EL_ID.fetch_add(1, Ordering::Relaxed)
+}
+static CUR_CHUNK_ID: AtomicU64 = AtomicU64::new(1);
+pub fn next_chunk_id() -> u64 {
+	CUR_CHUNK_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[wasm_bindgen(module = "neoview-web-binder")]
+extern "C" {
+	pub fn construct(target_el: &Element, chunk_id: u64, build_codes: Vec<u8>, args: Vec<JsValue>);
+	pub fn remove_chunk(chunk_id: u64);
+}
 
 const COMMON_NAMES: &[&str] = &include!(concat!(env!("OUT_DIR"), "/common_names.rs"));
 

@@ -1,7 +1,7 @@
 use proc_macro2::{Delimiter, Ident, Span, TokenStream, TokenTree};
 use quote::{ToTokens, TokenStreamExt, quote};
 
-use crate::cursor::{Cursor, Error, Token, err};
+use crate::cursor::{Cursor, Error, Token, err, match_punct};
 
 #[derive(Debug)]
 pub struct Path {
@@ -63,11 +63,11 @@ fn parse_children(cur: &mut Cursor) -> Result<Vec<Node>, Error> {
 			children.push(Node::DoBlock(block.stream()));
 		} else if let Some(el) = try_parse_el(cur)? {
 			children.push(Node::Element(el));
-			if !matches!(cur.peek(), Token::Punct(',', _, _)) {
+			if !match_punct!(cur.peek(), ',') {
 				continue;
 			}
 		} else {
-			let content = cur.eat_until(|token| matches!(token, Token::Punct(',', _, _)));
+			let content = cur.eat_until(|token| match_punct!(token, ','));
 			if content.is_empty() {
 				return err!("expected an element, expression or a do block", cur.peek().span());
 			}
@@ -90,13 +90,19 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 	if let Some(mut cur) = cur.try_enter_group(Delimiter::Parenthesis) {
 		has_body = true;
 		while !cur.is_end() {
-			let attr = cur.eat_until(|token| matches!(token, Token::Punct(',' | ':', _, _)));
+			let attr = cur.eat_until(|token| match_punct!(token, ',' | ':'));
 			if attr.is_empty() {
 				return err!("expected an attribute", cur.peek().span());
 			}
+			if (cur.is_end() || match_punct!(cur.peek(), ','))
+				&& matches!(&attr[..], [TokenTree::Ident(_)])
+			{
+				attrs.push((attr.clone(), attr));
+				continue;
+			}
 			cur.punct(':')?;
 
-			let value = cur.eat_until(|token| matches!(token, Token::Punct(',', _, _)));
+			let value = cur.eat_until(|token| match_punct!(token, ','));
 			if value.is_empty() {
 				return err!("expected an attribute value", cur.peek().span());
 			}
@@ -126,7 +132,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
 	let mut cur = Cursor::new(input.into(), Span::call_site());
 
-	let chunk = cur.eat_until(|token| matches!(token, Token::Punct(',', _, _)));
+	let chunk = cur.eat_until(|token| match_punct!(token, ','));
 	if chunk.is_empty() {
 		return err!("expected an expression", cur.peek().span());
 	}
