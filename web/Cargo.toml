@@ -11,6 +11,11 @@ documentation = "https://docs.rs/neoview-web/"
 [lib]
 doctest = false
 
+[features]
+default = ["css-types"]
+html-types = []
+css-types = ["html-types"]
+
 [dependencies]
 neoview = { path = "../neoview", version = "0.0.1" }
 rustc-hash = "2.1.2"
