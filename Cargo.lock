@@ -73,6 +73,7 @@ name = "neoview-web"
 version = "0.0.1"
 dependencies = [
  "neoview",
+ "neoview-macro",
  "rustc-hash",
  "slotmap",
  "wasm-bindgen",

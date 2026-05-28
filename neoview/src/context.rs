@@ -63,7 +63,7 @@ pub trait GlobalStoreProv: StoreProv {
 		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 		fun: impl FnMut(&mut Self::Ctx) + 'static,
 	) {
-		Store::effect_manual(self.ctx(), read, write, fun);
+		Store::effect_manual(self.ctx(), read, write, fun, true);
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
@@ -87,7 +87,7 @@ pub trait LocalStoreProv: StoreProv {
 		fun: impl FnMut(&mut Self::Ctx) + 'static,
 	) {
 		let slab = self.slab();
-		Store::effect_manual_in(self.ctx(), slab, read, write, fun).unwrap();
+		Store::effect_manual_in(self.ctx(), slab, read, write, fun, true).unwrap();
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
@@ -116,8 +116,10 @@ pub trait ScopedStoreProv: StoreProv {
 		fun: impl FnMut(&mut Self::Ctx) + 'static,
 	) {
 		match self.slab() {
-			Some(slab) => Store::effect_manual_in(self.ctx(), slab, read, write, fun).unwrap(),
-			None => Store::effect_manual(self.ctx(), read, write, fun),
+			Some(slab) => {
+				Store::effect_manual_in(self.ctx(), slab, read, write, fun, true).unwrap()
+			}
+			None => Store::effect_manual(self.ctx(), read, write, fun, true),
 		}
 	}
 	fn computed<T: 'static>(

@@ -16,7 +16,8 @@ pub struct ChunkBuild<'ctx> {
 	pub(crate) id: ChunkId,
 	pub(crate) slab: Option<SlabId>,
 	pub(crate) base_el: Element,
-	pub(crate) build_codes: BuildCodes,
+	#[doc(hidden)]
+	pub build_codes: BuildCodes,
 }
 impl<'ctx> ChunkBuild<'ctx> {
 	pub(crate) fn new(

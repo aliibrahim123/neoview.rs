@@ -1,4 +1,4 @@
-use proc_macro2::{Delimiter, Ident, Span, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Ident, Literal, Span, TokenStream, TokenTree};
 use quote::{ToTokens, TokenStreamExt, quote};
 
 use crate::cursor::{Cursor, Error, Token, err, match_punct};
@@ -28,8 +28,14 @@ pub enum Node {
 }
 
 #[derive(Debug)]
+pub enum Tag {
+	Path(Path),
+	Lit(Literal),
+}
+
+#[derive(Debug)]
 pub struct Element {
-	pub tag: Path,
+	pub tag: Tag,
 	pub attrs: Vec<(Vec<TokenTree>, Vec<TokenTree>)>,
 	pub children: Vec<Node>,
 }
@@ -80,7 +86,11 @@ fn parse_children(cur: &mut Cursor) -> Result<Vec<Node>, Error> {
 
 fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 	let start = cur.ind();
-	let Some(tag) = try_parse_path(cur) else {
+	let tag = if let Some(path) = try_parse_path(cur) {
+		Tag::Path(path)
+	} else if let Some(lit) = cur.try_literal() {
+		Tag::Lit(lit)
+	} else {
 		cur.recap(start);
 		return Ok(None);
 	};

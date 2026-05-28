@@ -12,12 +12,12 @@ documentation = "https://docs.rs/neoview-web/"
 doctest = false
 
 [features]
-default = ["css-types"]
 html-types = []
 css-types = ["html-types"]
 
 [dependencies]
 neoview = { path = "../neoview", version = "0.0.1" }
+neoview-macro = { path = "../macro", version = "0.0.1" }
 rustc-hash = "2.1.2"
 slotmap = "1.1.1"
 wasm-bindgen = "0.2.122"

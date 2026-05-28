@@ -166,9 +166,9 @@ impl<Ctx: Context> Store<Ctx> {
 	}
 	pub fn effect_manual(
 		ctx: &mut Ctx, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
-		fun: impl FnMut(&mut Ctx) + 'static,
+		fun: impl FnMut(&mut Ctx) + 'static, init_run: bool,
 	) {
-		Updater::add_effect(ctx, fun, Some((read, write)), true);
+		Updater::add_effect(ctx, fun, Some((read, write)), init_run);
 	}
 	pub fn effect_in(
 		ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) + 'static,
@@ -182,12 +182,12 @@ impl<Ctx: Context> Store<Ctx> {
 	}
 	pub fn effect_manual_in(
 		ctx: &mut Ctx, slab: SlabId, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
-		fun: impl FnMut(&mut Ctx) + 'static,
+		fun: impl FnMut(&mut Ctx) + 'static, init_run: bool,
 	) -> Result<(), Error> {
 		if !ctx.store().slabs.contains_key(&slab) {
 			return Err(Error::Removed);
 		}
-		let id = Updater::add_effect(ctx, fun, Some((read, write)), true);
+		let id = Updater::add_effect(ctx, fun, Some((read, write)), init_run);
 		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
 		Ok(())
 	}

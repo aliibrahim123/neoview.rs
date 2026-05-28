@@ -47,12 +47,12 @@ impl<Ctx: Context> Updater<Ctx> {
 
 	pub fn add_effect(
 		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) + 'static,
-		deps: Option<(Vec<PropId<()>>, Vec<PropId<()>>)>, run_fn: bool,
+		deps: Option<(Vec<PropId<()>>, Vec<PropId<()>>)>, init_run: bool,
 	) -> ItemId {
 		if deps.is_none() {
 			start_track_panicing(ctx.store_ref());
 		}
-		if run_fn {
+		if init_run {
 			fun(ctx)
 		}
 

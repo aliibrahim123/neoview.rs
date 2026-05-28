@@ -51,7 +51,7 @@ impl ToTokens for Token {
 
 macro_rules! match_punct {
 	($tok:expr, $pat:pat) => {
-		matches!($tok, Token::Punct($pat, _, _))
+		matches!($tok, $crate::cursor::Token::Punct($pat, _, _))
 	};
 }
 pub(crate) use match_punct;
