@@ -1,46 +1,34 @@
-use std::{
-	ops::{Deref, DerefMut},
-	sync::atomic::{AtomicU64, Ordering},
-};
+use std::ops::{Deref, DerefMut};
 
 use neoview::{ScopedStoreProv, SlabId, StoreProv};
-use wasm_bindgen::prelude::JsValue;
+use slotmap::new_key_type;
 use web_sys::Element;
 
-use crate::{
-	binder::{self, Buf},
-	context::DomContext,
-};
+use crate::{build_codes::BuildCodes, context::DomContext};
+
+new_key_type!(
+	pub struct ChunkId;
+);
 
 #[derive(Debug)]
 pub struct ChunkBuild<'ctx> {
-	ctx: &'ctx mut DomContext,
-	slab: Option<SlabId>,
-	base_el: Element,
-	pub(crate) id: u64,
-	build_codes: Buf,
-	el_stack: Vec<u64>,
-	args: Vec<JsValue>,
+	pub(crate) ctx: &'ctx mut DomContext,
+	pub(crate) id: ChunkId,
+	pub(crate) slab: Option<SlabId>,
+	pub(crate) base_el: Element,
+	pub(crate) build_codes: BuildCodes,
 }
 impl<'ctx> ChunkBuild<'ctx> {
 	pub(crate) fn new(
-		ctx: &'ctx mut DomContext, id: u64, slab: Option<SlabId>, base_el: Element,
+		ctx: &'ctx mut DomContext, id: ChunkId, slab: Option<SlabId>, base_el: Element,
 	) -> Self {
-		Self {
-			ctx,
-			slab,
-			base_el,
-			id,
-			build_codes: Buf::default(),
-			el_stack: vec![binder::next_el_id()],
-			args: Vec::new(),
-		}
+		Self { ctx, slab, base_el, id, build_codes: BuildCodes::new() }
 	}
 	pub fn base_el(&self) -> Element {
 		self.base_el.clone()
 	}
 	pub fn finish(self) -> Element {
-		binder::construct(&self.base_el, self.id, self.build_codes.0, self.args);
+		self.build_codes.construct(self.ctx, &self.base_el, self.id);
 		self.base_el
 	}
 }
@@ -62,13 +50,19 @@ impl ScopedStoreProv for ChunkBuild<'_> {
 #[derive(Debug)]
 pub struct RemovableChunk<'ctx>(ChunkBuild<'ctx>);
 impl<'ctx> RemovableChunk<'ctx> {
-	pub(crate) fn new(ctx: &'ctx mut DomContext, base_el: Element) -> Self {
+	pub(crate) fn new(ctx: &'ctx mut DomContext, id: ChunkId, base_el: Element) -> Self {
 		let slab = ctx.store().create_slab();
-		Self(ChunkBuild::new(ctx, binder::next_chunk_id(), Some(slab), base_el))
+		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
-	pub fn finish(self) -> (Element, impl FnOnce()) {
+	pub fn finish(self) -> (Element, impl FnOnce(&mut DomContext)) {
 		let id = self.0.id;
-		(self.0.finish(), move || binder::remove_chunk(id))
+		let slab = self.0.slab.unwrap();
+		let el = self.0.finish();
+		(el.clone(), move |ctx| {
+			ctx.chunk_el_map.remove(id);
+			ctx.store().remove_slab(slab);
+			el.remove();
+		})
 	}
 }
 impl<'ctx> Deref for RemovableChunk<'ctx> {
@@ -81,85 +75,4 @@ impl<'ctx> DerefMut for RemovableChunk<'ctx> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.0
 	}
-}
-
-impl<'ctx> ChunkBuild<'ctx> {
-	const EL_START: u8 = 0;
-	const EL_ID: u8 = 1;
-	const ATTR: u8 = 2;
-	const PROP: u8 = 3;
-	const CLASS: u8 = 4;
-	const STYLE: u8 = 5;
-	const TEXT: u8 = 6;
-	const NODE: u8 = 7;
-	const END: u8 = 255;
-	#[doc(hidden)]
-	pub fn __start_el(&mut self, tag: &str) {
-		self.build_codes.push(Self::EL_START);
-		self.build_codes.push_name(tag);
-		self.el_stack.push(0);
-	}
-	#[doc(hidden)]
-	pub fn __request_id(&mut self) -> u64 {
-		if let Some(id) = self.el_stack.last() {
-			return *id;
-		}
-		let id = binder::next_el_id();
-		self.build_codes.push(Self::EL_ID);
-		self.el_stack.push(id);
-		id
-	}
-	#[doc(hidden)]
-	pub fn __attr(&mut self, name: &str, value: &str) {
-		self.build_codes.push(Self::ATTR);
-		self.build_codes.push_name(name);
-		self.build_codes.push_str(value);
-	}
-	#[doc(hidden)]
-	pub fn __prop(&mut self, name: &str, value: JsValue) {
-		self.build_codes.push(Self::PROP);
-		self.build_codes.push_str(name);
-		self.build_codes.push_vuint(self.args.len() as u64);
-		self.args.push(value);
-	}
-	#[doc(hidden)]
-	pub fn __class(&mut self, value: &str) {
-		self.build_codes.push(Self::CLASS);
-		self.build_codes.push_str(value);
-	}
-	#[doc(hidden)]
-	pub fn __style(&mut self, name: &str, value: &str) {
-		self.build_codes.push(Self::STYLE);
-		self.build_codes.push_name(name);
-		self.build_codes.push_str(value);
-	}
-	#[doc(hidden)]
-	pub fn __text(&mut self, value: &str) {
-		self.build_codes.push(Self::TEXT);
-		self.build_codes.push_str(value);
-	}
-	#[doc(hidden)]
-	pub fn __node(&mut self, value: JsValue) {
-		self.build_codes.push(Self::NODE);
-		self.build_codes.push_vuint(self.args.len() as u64);
-		self.args.push(value);
-	}
-	#[doc(hidden)]
-	pub fn __end_el(&mut self) {
-		self.build_codes.push(Self::END);
-		self.el_stack.pop();
-	}
-}
-
-#[doc(hidden)]
-pub mod __build_code {
-	#[macro_export]
-	#[doc(hidden)]
-	macro_rules! start_el {
-		($build:expr, $el:expr, $tag:expr) => {
-			$build.__start_el(stringify!($tag));
-		};
-	}
-
-	pub use start_el;
 }
