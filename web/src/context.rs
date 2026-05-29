@@ -9,10 +9,10 @@ use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use web_sys::{Element, window};
 
-use crate::chunk_build::{ChunkBuild, ChunkId, RemovableChunk};
+use crate::chunk::{Chunk, ChunkBuild, ChunkId, RemovableChunk};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ContextId(u64);
+pub struct ContextId(pub(crate) u64);
 impl ContextId {
 	fn next() -> Self {
 		static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -31,11 +31,11 @@ impl Default for CtxOptions {
 
 #[derive(Debug)]
 pub struct DomContext {
-	id: ContextId,
+	pub(crate) id: ContextId,
 	options: CtxOptions,
 	root_el: Element,
 	store: Store<Self>,
-	pub(crate) chunk_el_map: SlotMap<ChunkId, Vec<Element>>,
+	pub(crate) chunks: SlotMap<ChunkId, Chunk>,
 }
 impl DomContext {
 	pub fn new(root_el: Element, opts: CtxOptions) -> CtxHandle {
@@ -44,7 +44,7 @@ impl DomContext {
 			options: opts,
 			root_el,
 			store: Store::default(),
-			chunk_el_map: SlotMap::default(),
+			chunks: SlotMap::default(),
 		};
 		CtxHandle::new(ctx)
 	}
@@ -52,7 +52,7 @@ impl DomContext {
 		self.root_el.clone()
 	}
 	fn new_chunk_id(&mut self) -> ChunkId {
-		self.chunk_el_map.insert(Vec::new())
+		self.chunks.insert(Chunk::default())
 	}
 	pub fn root_chunk(&mut self) -> ChunkBuild<'_> {
 		let id = self.new_chunk_id();

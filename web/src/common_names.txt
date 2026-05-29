@@ -62,7 +62,9 @@ col
 colgroup
 color
 cols
+click
 colspan
+change
 column-gap
 content
 controls
@@ -90,6 +92,7 @@ figcaption
 figure
 filter
 flex
+focus
 flex-basis
 flex-direction
 flex-grow
@@ -213,6 +216,7 @@ rowspan
 s
 samp
 sandbox
+submit
 script
 scroll-behavior
 search

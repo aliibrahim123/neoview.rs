@@ -1,14 +1,32 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+	fmt::Debug,
+	ops::{Deref, DerefMut},
+};
 
 use neoview::{ScopedStoreProv, SlabId, StoreProv};
 use slotmap::new_key_type;
-use web_sys::Element;
+use web_sys::{Element, Event, Text};
 
 use crate::{build_codes::BuildCodes, context::DomContext};
 
 new_key_type!(
 	pub struct ChunkId;
 );
+
+#[derive(Default)]
+pub struct Chunk {
+	pub elements: Vec<Element>,
+	pub text_nodes: Vec<Text>,
+	pub events: Vec<Box<dyn FnMut(&mut DomContext, Event)>>,
+}
+impl Debug for Chunk {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Chunk")
+			.field("elements", &self.elements)
+			.field("text_nodes", &self.text_nodes)
+			.finish()
+	}
+}
 
 #[derive(Debug)]
 pub struct ChunkBuild<'ctx> {
@@ -60,7 +78,7 @@ impl<'ctx> RemovableChunk<'ctx> {
 		let slab = self.0.slab.unwrap();
 		let el = self.0.finish();
 		(el.clone(), move |ctx| {
-			ctx.chunk_el_map.remove(id);
+			ctx.chunks.remove(id);
 			ctx.store().remove_slab(slab);
 			el.remove();
 		})

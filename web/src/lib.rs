@@ -1,5 +1,5 @@
 mod build_codes;
-mod chunk_build;
+mod chunk;
 mod context;
 #[doc(hidden)]
 #[cfg(feature = "css-types")]
@@ -8,7 +8,7 @@ pub mod css_props;
 pub mod html_types;
 
 pub use {
-	chunk_build::{ChunkBuild, RemovableChunk},
+	chunk::{ChunkBuild, RemovableChunk},
 	context::{CtxHandle, CtxOptions, DomContext},
 	neoview,
 	neoview::chunk,
