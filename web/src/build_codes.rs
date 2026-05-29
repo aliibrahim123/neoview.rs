@@ -1,42 +1,42 @@
-use std::{borrow::Cow, ops::Deref};
+use std::borrow::Cow;
 
 use neoview::{PropId, ScopedStoreProv, Store, StoreProv, TrackResult};
 use slotmap::Key;
 use wasm_bindgen::prelude::{JsCast, JsValue, wasm_bindgen};
-use web_sys::{Element, HtmlElement, Text, js_sys::Reflect};
+use web_sys::{Element, HtmlElement, Node, Text, js_sys::Reflect};
 
 use crate::{
 	chunk::{ChunkBuild, ChunkId},
 	context::{ContextId, DomContext},
 };
 
-#[wasm_bindgen]
-pub struct ConstructResult(Vec<Element>, Vec<Text>);
-
 #[wasm_bindgen(module = "neoview-web-binder")]
 extern "C" {
 	pub fn construct(
-		target_el: &Element, build_codes: Vec<u8>, args: Vec<JsValue>,
-	) -> ConstructResult;
+		target_el: &Element, build_codes: Vec<u8>, props: Vec<JsValue>, nodes: Vec<Node>,
+	) -> Vec<Element>;
 
 }
 
 const COMMON_NAMES: &[&str] = &include!(concat!(env!("OUT_DIR"), "/common_names.rs"));
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Buf(pub Vec<u8>);
-impl Buf {}
-
 #[derive(Debug)]
 pub struct BuildCodes {
 	codes: Vec<u8>,
-	args: Vec<JsValue>,
+	props: Vec<JsValue>,
+	nodes: Vec<Node>,
 	cur_el_id: u64,
 	el_id_stack: Vec<Option<u64>>,
 }
 impl BuildCodes {
 	pub fn new() -> Self {
-		Self { codes: Vec::new(), args: Vec::new(), cur_el_id: 1, el_id_stack: vec![Some(0)] }
+		Self {
+			codes: Vec::new(),
+			props: Vec::new(),
+			nodes: Vec::new(),
+			cur_el_id: 1,
+			el_id_stack: vec![Some(0)],
+		}
 	}
 	pub fn push_slice(&mut self, slice: &[u8]) {
 		self.codes.extend_from_slice(slice);
@@ -100,8 +100,8 @@ impl BuildCodes {
 	pub fn prop(&mut self, name: &str, value: JsValue) {
 		self.codes.push(Self::PROP);
 		self.push_str(name);
-		self.push_vuint(self.args.len() as u64);
-		self.args.push(value);
+		self.push_vuint(self.props.len() as u64);
+		self.props.push(value);
 	}
 	pub fn class(&mut self, value: &str) {
 		self.codes.push(Self::CLASS);
@@ -116,10 +116,10 @@ impl BuildCodes {
 		self.codes.push(Self::TEXT);
 		self.push_str(value);
 	}
-	pub fn node(&mut self, value: JsValue) {
+	pub fn node(&mut self, value: Node) {
 		self.codes.push(Self::NODE);
-		self.push_vuint(self.args.len() as u64);
-		self.args.push(value);
+		self.push_vuint(self.nodes.len() as u64);
+		self.nodes.push(value);
 	}
 	pub fn event(&mut self, ctx_id: ContextId, chunk_id: ChunkId, name: &str, fn_id: u64) {
 		self.codes.push(Self::EVENT);
@@ -133,10 +133,8 @@ impl BuildCodes {
 		self.el_id_stack.pop();
 	}
 	pub fn construct(self, ctx: &mut DomContext, base_el: &Element, id: ChunkId) {
-		let ConstructResult(elements, text_nodes) = construct(base_el, self.codes, self.args);
-		let chunk = &mut ctx.chunks[id];
-		chunk.elements = elements;
-		chunk.text_nodes = text_nodes;
+		let elements = construct(base_el, self.codes, self.props, self.nodes);
+		ctx.chunks[id].elements = elements;
 	}
 }
 
@@ -307,7 +305,9 @@ pub mod __buildcode {
 	#[macro_export]
 	#[doc(hidden)]
 	macro_rules! content {
-		($build:expr, $el:expr, $($t:tt)*) => {};
+		($build:expr, $el:expr, $($t:tt)*) => {
+			__buildcode::ContentValue::apply(__buildcode::refine_value!($($t)*), &mut $build)
+		};
 	}
 
 	#[macro_export]
@@ -346,7 +346,7 @@ pub mod __buildcode {
 		events.push(fun);
 	}
 
-	pub use super::{AttrValue, ClassValue, PropValue, StyleValue};
+	pub use super::{AttrValue, ClassValue, ContentValue, PropValue, StyleValue};
 	#[cfg(feature = "html-types")]
 	pub use attr_html;
 	pub use neoview_macro::kababify;
@@ -366,6 +366,15 @@ fn to_html_el(el: &Element) -> &HtmlElement {
 }
 fn add_effect(
 	build: &mut ChunkBuild, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+	fun: impl FnMut(&mut DomContext) + 'static,
+) {
+	match build.slab() {
+		Some(slab) => Store::effect_manual_in(build.ctx, slab, read, write, fun, false).unwrap(),
+		None => Store::effect_manual(build.ctx, read, write, fun, false),
+	}
+}
+fn add_effect_with_el(
+	build: &mut ChunkBuild, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 	mut fun: impl FnMut(&mut DomContext, ChunkId, usize) + 'static,
 ) {
 	let el = build.build_codes.request_id();
@@ -373,10 +382,7 @@ fn add_effect(
 	let fun = move |ctx: &mut DomContext| {
 		fun(ctx, chunk, el as usize);
 	};
-	match build.slab() {
-		Some(slab) => Store::effect_manual_in(build.ctx, slab, read, write, fun, false).unwrap(),
-		None => Store::effect_manual(build.ctx, read, write, fun, false),
-	}
+	add_effect(build, read, write, fun);
 }
 
 trait BasicAttrValue {
@@ -417,7 +423,7 @@ impl BasicAttrValue for bool {
 		el.toggle_attribute_with_force(name, *self).unwrap();
 	}
 }
-macro_rules! basic_attr_to_string {
+macro_rules! basic_attr_int {
 	($($ty:ty)*) => {
 		$(impl BasicAttrValue for $ty {
 			fn apply_static(&self, build_codes: &mut BuildCodes, name: &str) {
@@ -429,7 +435,7 @@ macro_rules! basic_attr_to_string {
 		})*
 	};
 }
-basic_attr_to_string!(i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64);
+basic_attr_int!(i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64);
 impl<T: BasicAttrValue> BasicAttrValue for &T {
 	fn apply_static(&self, build_codes: &mut BuildCodes, name: &str) {
 		(*self).apply_static(build_codes, name);
@@ -464,7 +470,7 @@ impl<T: BasicAttrValue> AttrValue<Static> for T {
 impl<T: BasicAttrValue> AttrValue<Prop> for PropId<T> {
 	fn apply(self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
 		BasicAttrValue::apply_static(build.ctx.read(self), &mut build.build_codes, &name);
-		add_effect(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
+		add_effect_with_el(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
 			let el = &ctx.chunks[chunk].elements[el];
 			BasicAttrValue::apply_dynamic(ctx.read(self), el, &name);
 		});
@@ -476,7 +482,7 @@ impl<T: BasicAttrValue, F: FnMut(&mut DomContext) -> T + 'static> AttrValue<Comp
 		let value = self(build.ctx);
 		let TrackResult { read, written: write } = build.store().end_track().unwrap();
 		BasicAttrValue::apply_static(&value, &mut build.build_codes, &name);
-		add_effect(build, read, write, move |ctx, chunk, el| {
+		add_effect_with_el(build, read, write, move |ctx, chunk, el| {
 			let value = self(ctx);
 			let el = &ctx.chunks[chunk].elements[el];
 			BasicAttrValue::apply_dynamic(&value, el, &name);
@@ -499,7 +505,7 @@ impl ClassValue for PropId<bool> {
 		if build.ctx.get(self) {
 			build.build_codes.class(&name);
 		}
-		add_effect(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
+		add_effect_with_el(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
 			let el = &ctx.chunks[chunk].elements[el];
 			el.class_list().toggle_with_force(&name, ctx.get(self)).unwrap();
 		});
@@ -513,7 +519,7 @@ impl<F: FnMut(&mut DomContext) -> bool + 'static> ClassValue for F {
 		if value {
 			build.build_codes.class(&name);
 		}
-		add_effect(build, read, write, move |ctx, chunk, el| {
+		add_effect_with_el(build, read, write, move |ctx, chunk, el| {
 			let value = self(ctx);
 			let el = &ctx.chunks[chunk].elements[el];
 			el.class_list().toggle_with_force(&name, value).unwrap();
@@ -522,53 +528,31 @@ impl<F: FnMut(&mut DomContext) -> bool + 'static> ClassValue for F {
 }
 
 pub trait BasicStyleValue {
-	fn apply_static(&self, build_codes: &mut BuildCodes, name: &str);
-	fn apply_dynamic(&self, el: &Element, name: &str);
+	fn to_str(&self) -> &str;
 }
 impl BasicStyleValue for str {
-	fn apply_static(&self, build_codes: &mut BuildCodes, name: &str) {
-		build_codes.style(name, self);
-	}
-	fn apply_dynamic(&self, el: &Element, name: &str) {
-		to_html_el(el).style().set_property(name, self).unwrap();
+	fn to_str(&self) -> &str {
+		self
 	}
 }
 impl BasicStyleValue for &str {
-	fn apply_static(&self, build_codes: &mut BuildCodes, name: &str) {
-		build_codes.style(name, self);
-	}
-	fn apply_dynamic(&self, el: &Element, name: &str) {
-		BasicStyleValue::apply_dynamic(*self, el, name);
+	fn to_str(&self) -> &str {
+		*self
 	}
 }
 impl BasicStyleValue for String {
-	fn apply_static(&self, build_codes: &mut BuildCodes, name: &str) {
-		build_codes.style(name, self);
-	}
-	fn apply_dynamic(&self, el: &Element, name: &str) {
-		BasicStyleValue::apply_dynamic(self.deref(), el, name);
+	fn to_str(&self) -> &str {
+		&self
 	}
 }
 impl<T: BasicStyleValue> BasicStyleValue for Option<T> {
-	fn apply_static(&self, build_codes: &mut BuildCodes, name: &str) {
-		if let Some(v) = self {
-			v.apply_static(build_codes, name);
-		}
-	}
-	fn apply_dynamic(&self, el: &Element, name: &str) {
-		if let Some(v) = self {
-			v.apply_dynamic(el, name);
-		} else {
-			to_html_el(el).style().remove_property(name).unwrap();
-		}
+	fn to_str(&self) -> &str {
+		if let Some(v) = self { v.to_str() } else { "" }
 	}
 }
 impl<T: BasicStyleValue> BasicStyleValue for &T {
-	fn apply_static(&self, build_codes: &mut BuildCodes, name: &str) {
-		(*self).apply_static(build_codes, name);
-	}
-	fn apply_dynamic(&self, el: &Element, name: &str) {
-		(*self).apply_dynamic(el, name);
+	fn to_str(&self) -> &str {
+		(**self).to_str()
 	}
 }
 
@@ -577,15 +561,15 @@ pub trait StyleValue<Value> {
 }
 impl<T: BasicStyleValue> StyleValue<Static> for T {
 	fn apply(self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
-		self.apply_static(&mut build.build_codes, &name);
+		build.build_codes.style(&name, self.to_str());
 	}
 }
 impl<T: BasicStyleValue + Clone> StyleValue<Prop> for PropId<T> {
 	fn apply(self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
-		BasicStyleValue::apply_static(build.ctx.read(self), &mut build.build_codes, &name);
-		add_effect(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
+		build.build_codes.style(&name, build.ctx.read(self).to_str());
+		add_effect_with_el(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
 			let el = &ctx.chunks[chunk].elements[el];
-			BasicStyleValue::apply_dynamic(ctx.read(self), el, &name);
+			to_html_el(el).style().set_property(&name, ctx.read(self).to_str()).unwrap();
 		});
 	}
 }
@@ -594,11 +578,11 @@ impl<T: BasicStyleValue, F: FnMut(&mut DomContext) -> T + 'static> StyleValue<Co
 		build.store().start_track().unwrap();
 		let value = self(build.ctx);
 		let TrackResult { read, written: write } = build.store().end_track().unwrap();
-		BasicStyleValue::apply_static(&value, &mut build.build_codes, &name);
-		add_effect(build, read, write, move |ctx, chunk, el| {
+		build.build_codes.style(&name, value.to_str());
+		add_effect_with_el(build, read, write, move |ctx, chunk, el| {
 			let value = self(ctx);
 			let el = &ctx.chunks[chunk].elements[el];
-			BasicStyleValue::apply_dynamic(&value, el, &name);
+			to_html_el(el).style().set_property(&name, value.to_str()).unwrap();
 		});
 	}
 }
@@ -615,7 +599,7 @@ impl PropValue for PropId<JsValue> {
 	fn apply(self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
 		let value = build.ctx().read(self).clone();
 		build.build_codes.prop(&name, value);
-		add_effect(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
+		add_effect_with_el(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
 			let el = &ctx.chunks[chunk].elements[el];
 			Reflect::set(el, &name.as_ref().into(), ctx.read(self)).unwrap();
 		});
@@ -627,10 +611,111 @@ impl<F: FnMut(&mut DomContext) -> JsValue + 'static> PropValue for F {
 		let value = self(build.ctx);
 		let TrackResult { read, written: write } = build.store().end_track().unwrap();
 		build.build_codes.prop(&name, value);
-		add_effect(build, read, write, move |ctx, chunk, el| {
+		add_effect_with_el(build, read, write, move |ctx, chunk, el| {
 			let value = self(ctx);
 			let el = &ctx.chunks[chunk].elements[el];
 			Reflect::set(el, &name.as_ref().into(), &value).unwrap();
+		});
+	}
+}
+
+pub trait BasicTextValue {
+	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R;
+}
+impl BasicTextValue for str {
+	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
+		fun(self)
+	}
+}
+impl BasicTextValue for &str {
+	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
+		fun(*self)
+	}
+}
+impl BasicTextValue for String {
+	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
+		fun(self)
+	}
+}
+macro_rules! basic_text_primitive {
+	($($ty:ty)+) => {
+		$(impl BasicTextValue for $ty {
+			fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
+				fun(&self.to_string())
+			}
+		})+
+	};
+}
+basic_text_primitive!(bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64);
+impl<T: BasicTextValue> BasicTextValue for Option<T> {
+	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
+		if let Some(value) = self { value.with(fun) } else { fun("") }
+	}
+}
+impl<T: BasicTextValue> BasicTextValue for &T {
+	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
+		(*self).with(fun)
+	}
+}
+pub trait ContentValue<Value> {
+	fn apply(self, build: &mut ChunkBuild<'_>);
+}
+impl<T: BasicTextValue> ContentValue<Static> for T {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		self.with(|value| {
+			if value != "" {
+				build.build_codes.text(value)
+			}
+		});
+	}
+}
+impl<T: BasicTextValue> ContentValue<Prop> for PropId<T> {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		let node = build.ctx().read(self).with(|value| Text::new_with_data(value).unwrap());
+		build.build_codes.node(node.clone().into());
+		add_effect(build, vec![self.erase_type()], vec![], move |ctx| {
+			ctx.read(self).with(|value| node.set_text_content(Some(value)));
+		});
+	}
+}
+impl<T: BasicTextValue, F: FnMut(&mut DomContext) -> T + 'static> ContentValue<Computed> for F {
+	fn apply(mut self, build: &mut ChunkBuild<'_>) {
+		build.store().start_track().unwrap();
+		let value = self(build.ctx);
+		let TrackResult { read, written: write } = build.store().end_track().unwrap();
+		let node = value.with(|value| Text::new_with_data(value).unwrap());
+		build.build_codes.node(node.clone().into());
+		add_effect(build, read, write, move |ctx| {
+			self(ctx).with(|value| node.set_text_content(Some(value)));
+		});
+	}
+}
+impl ContentValue<Node> for Node {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		build.build_codes.node(self);
+	}
+}
+impl ContentValue<Node> for PropId<Node> {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		let mut node = build.ctx().read(self).clone();
+		build.build_codes.node(node.clone().into());
+		add_effect(build, vec![self.erase_type()], vec![], move |ctx| {
+			let cur = ctx.read(self).clone();
+			node.parent_node().unwrap().replace_child(&cur, &node).unwrap();
+			node = cur;
+		});
+	}
+}
+impl<F: FnMut(&mut DomContext) -> Node + 'static> ContentValue<Node> for F {
+	fn apply(mut self, build: &mut ChunkBuild<'_>) {
+		build.store().start_track().unwrap();
+		let mut node = self(build.ctx);
+		let TrackResult { read, written: write } = build.store().end_track().unwrap();
+		build.build_codes.node(node.clone());
+		add_effect(build, read, write, move |ctx| {
+			let cur = self(ctx);
+			node.parent_node().unwrap().replace_child(&cur, &node).unwrap();
+			node = cur;
 		});
 	}
 }

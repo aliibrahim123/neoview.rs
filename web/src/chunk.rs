@@ -16,15 +16,11 @@ new_key_type!(
 #[derive(Default)]
 pub struct Chunk {
 	pub elements: Vec<Element>,
-	pub text_nodes: Vec<Text>,
 	pub events: Vec<Box<dyn FnMut(&mut DomContext, Event)>>,
 }
 impl Debug for Chunk {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("Chunk")
-			.field("elements", &self.elements)
-			.field("text_nodes", &self.text_nodes)
-			.finish()
+		f.debug_struct("Chunk").field("elements", &self.elements).finish()
 	}
 }
 
@@ -79,7 +75,7 @@ impl<'ctx> RemovableChunk<'ctx> {
 		let el = self.0.finish();
 		(el.clone(), move |ctx| {
 			ctx.chunks.remove(id);
-			ctx.store().remove_slab(slab);
+			ctx.store().remove_slab(slab).unwrap();
 			el.remove();
 		})
 	}
