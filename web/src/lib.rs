@@ -1,3 +1,4 @@
+mod bindings;
 mod build_codes;
 mod chunk;
 mod context;

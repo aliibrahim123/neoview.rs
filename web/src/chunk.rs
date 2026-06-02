@@ -5,7 +5,7 @@ use std::{
 
 use neoview::{ScopedStoreProv, SlabId, StoreProv};
 use slotmap::new_key_type;
-use web_sys::{Element, Event, Text};
+use web_sys::{Element, Event};
 
 use crate::{build_codes::BuildCodes, context::DomContext};
 
