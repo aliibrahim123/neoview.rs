@@ -232,13 +232,14 @@ pub mod __buildcode {
 	#[doc(hidden)]
 	#[cfg(not(feature = "html-types"))]
 	macro_rules! attr {
-		($build:expr, $el:expr, [$attr:ident], $($value:tt)*) => {{
+		($build:expr, $el:expr, [$attr:ident], $($value:tt)*) => {
 			__buildcode::AttrValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build,
 				__buildcode::kababify!($attr).into()
 			);
-		}};
+		};
 		($build:expr, $el:expr, [on.$event:ident], $($value:tt)*) => {{
+			__buildcode::colorify!($event);
 			__buildcode::add_event(&mut $build, stringify!($event), Box::new($($value)*));
 		}};
 		($($t:tt)*) => {
@@ -248,52 +249,55 @@ pub mod __buildcode {
 	#[macro_export]
 	#[doc(hidden)]
 	macro_rules! attr_common {
-		($build:expr, $el:expr, [$attr_start:ident $(-$attr_rest:ident)+], $($value:tt)*) => {{
+		($build:expr, $el:expr, [$attr_start:ident $(-$attr_rest:ident)+], $($value:tt)*) => {
 			__buildcode::AttrValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build,
 				__buildcode::kababify!($attr_start $(-$attr_rest)+).into()
 			);
-		}};
+		};
 		($build:expr, $el:expr, [$attr:literal], $($value:tt)*) => {
 			__buildcode::AttrValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build, $attr.into()
 			);
 		};
 		($build:expr, $el:expr, [class.$class_start:ident $(-$class_rest:ident)*], $($value:tt)*) => {{
+			__buildcode::colorify!($class_start);
 			__buildcode::ClassValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build,
 				__buildcode::kababify!($class_start $(-$class_rest)*).into()
 			);
 		}};
-		($build:expr, $el:expr, [class.$class:literal], $($value:tt)*) => {{
+		($build:expr, $el:expr, [class.$class:literal], $($value:tt)*) => {
 			__buildcode::ClassValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build, $class.into()
 			);
-		}};
+		};
 		($build:expr, $el:expr, [style.$prop_start:ident $(-$prop_rest:ident)*], $($value:tt)*) => {{
+			__buildcode::colorify!($prop_start);
 			__buildcode::StyleValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build,
 				__buildcode::kababify!($prop_start $(-$prop_rest)*).into()
 			);
 		}};
-		($build:expr, $el:expr, [style.$prop:literal], $($value:tt)*) => {{
+		($build:expr, $el:expr, [style.$prop:literal], $($value:tt)*) => {
 			__buildcode::ClassValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build, $prop.into()
 			);
-		}};
+		};
 		($build:expr, $el:expr, [prop.$prop:ident], $($value:tt)*) => {{
+			__buildcode::colorify!($prop);
 			__buildcode::PropValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build, stringify!($prop).into()
 			);
 		}};
-		($build:expr, $el:expr, [prop.$prop:literal], $($value:tt)*) => {{
+		($build:expr, $el:expr, [prop.$prop:literal], $($value:tt)*) => {
 			__buildcode::PropValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build, $prop.into()
 			);
-		}};
-		($build:expr, $el:expr, [on.$event:literal], $($value:tt)*) => {{
-			__buildcode::add_event(&mut $build, $event, Box::new($($value)*));
-		}};
+		};
+		($build:expr, $el:expr, [on.$event:literal], $($value:tt)*) => {
+			__buildcode::add_event(&mut $build, $event, Box::new($($value)*))
+		};
 		($build:expr, $el:expr, [$($attr:tt)*], $($value:tt)*) => {
 			::core::compile_error!(concat!("unknown attribute: ", stringify!($($attr)*)))
 		};
@@ -333,6 +337,15 @@ pub mod __buildcode {
 		($($t:tt)*) => { $($t)* };
 	}
 
+	#[macro_export]
+	#[doc(hidden)]
+	macro_rules! colorify {
+		($x:ident) => {{
+			#[allow(unused, nonstandard_style)]
+			let $x = ();
+		}};
+	}
+
 	use crate::prelude::{ChunkBuild, DomContext};
 
 	pub fn add_event(
@@ -349,7 +362,7 @@ pub mod __buildcode {
 	pub use neoview_macro::kababify;
 	use web_sys::Event;
 	pub use {
-		attr, attr_common, content, end_chunk, end_do_block, end_el, refine_value, start_chunk,
-		start_do_block, start_el, start_el_common,
+		attr, attr_common, colorify, content, end_chunk, end_do_block, end_el, refine_value,
+		start_chunk, start_do_block, start_el, start_el_common,
 	};
 }
