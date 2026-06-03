@@ -1,3 +1,4 @@
+// sorry trait solver for this madness
 use std::borrow::Cow;
 
 use neoview::{PropId, ScopedStoreProv, Store, StoreProv, TrackResult};
@@ -5,7 +6,6 @@ use wasm_bindgen::prelude::{JsCast, JsValue};
 use web_sys::{Element, HtmlElement, Node, Text, js_sys::Reflect};
 
 use crate::{
-	build_codes::BuildCodes,
 	chunk::ChunkId,
 	prelude::{ChunkBuild, DomContext},
 };
@@ -305,10 +305,11 @@ impl<T: BasicTextValue> BasicTextValue for &T {
 		(*self).with(fun)
 	}
 }
-pub trait ContentValue<Value> {
+
+pub trait TextValue<Value> {
 	fn apply(self, build: &mut ChunkBuild<'_>);
 }
-impl<T: BasicTextValue> ContentValue<Static> for T {
+impl<T: BasicTextValue> TextValue<Static> for T {
 	fn apply(self, build: &mut ChunkBuild<'_>) {
 		self.with(|value| {
 			if value != "" {
@@ -317,7 +318,7 @@ impl<T: BasicTextValue> ContentValue<Static> for T {
 		});
 	}
 }
-impl<T: BasicTextValue> ContentValue<Prop> for PropId<T> {
+impl<T: BasicTextValue> TextValue<Prop> for PropId<T> {
 	fn apply(self, build: &mut ChunkBuild<'_>) {
 		let node = build.ctx().read(self).with(|value| Text::new_with_data(value).unwrap());
 		build.build_codes.node(node.clone().into());
@@ -326,7 +327,7 @@ impl<T: BasicTextValue> ContentValue<Prop> for PropId<T> {
 		});
 	}
 }
-impl<T: BasicTextValue, F: FnMut(&mut DomContext) -> T + 'static> ContentValue<Computed> for F {
+impl<T: BasicTextValue, F: FnMut(&mut DomContext) -> T + 'static> TextValue<Computed> for F {
 	fn apply(mut self, build: &mut ChunkBuild<'_>) {
 		build.store().start_track().unwrap();
 		let value = self(build.ctx);
@@ -338,12 +339,16 @@ impl<T: BasicTextValue, F: FnMut(&mut DomContext) -> T + 'static> ContentValue<C
 		});
 	}
 }
-impl<T: Into<Node>> ContentValue<Static2> for T {
+
+pub trait NodeValue<Value> {
+	fn apply(self, build: &mut ChunkBuild<'_>);
+}
+impl<T: Into<Node>> NodeValue<Static> for T {
 	fn apply(self, build: &mut ChunkBuild<'_>) {
 		build.build_codes.node(self.into());
 	}
 }
-impl<T: Into<Node> + Clone> ContentValue<Prop2> for PropId<T> {
+impl<T: Into<Node> + Clone> NodeValue<Prop> for PropId<T> {
 	fn apply(self, build: &mut ChunkBuild<'_>) {
 		let mut node = build.ctx().read(self).clone().into();
 		build.build_codes.node(node.clone());
@@ -354,7 +359,7 @@ impl<T: Into<Node> + Clone> ContentValue<Prop2> for PropId<T> {
 		});
 	}
 }
-impl<T: Into<Node>, F: FnMut(&mut DomContext) -> T + 'static> ContentValue<Computed2> for F {
+impl<T: Into<Node>, F: FnMut(&mut DomContext) -> T + 'static> NodeValue<Computed> for F {
 	fn apply(mut self, build: &mut ChunkBuild<'_>) {
 		build.store().start_track().unwrap();
 		let mut node = self(build.ctx).into();
@@ -365,5 +370,40 @@ impl<T: Into<Node>, F: FnMut(&mut DomContext) -> T + 'static> ContentValue<Compu
 			node.parent_node().unwrap().replace_child(&cur, &node).unwrap();
 			node = cur;
 		});
+	}
+}
+
+pub trait ContentValue<Value> {
+	fn apply(self, build: &mut ChunkBuild<'_>);
+}
+
+impl<T: TextValue<Static>> ContentValue<Static> for T {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		self.apply(build);
+	}
+}
+impl<T: TextValue<Prop>> ContentValue<Prop> for T {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		self.apply(build);
+	}
+}
+impl<T: TextValue<Computed>> ContentValue<Computed> for T {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		self.apply(build);
+	}
+}
+impl<T: NodeValue<Static>> ContentValue<Static2> for T {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		self.apply(build);
+	}
+}
+impl<T: NodeValue<Prop>> ContentValue<Prop2> for T {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		self.apply(build);
+	}
+}
+impl<T: NodeValue<Computed>> ContentValue<Computed2> for T {
+	fn apply(self, build: &mut ChunkBuild<'_>) {
+		self.apply(build);
 	}
 }

@@ -1,3 +1,4 @@
+pub mod apply;
 mod bindings;
 mod build_codes;
 mod chunk;

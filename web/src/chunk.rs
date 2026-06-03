@@ -7,7 +7,7 @@ use neoview::{ScopedStoreProv, SlabId, StoreProv};
 use slotmap::new_key_type;
 use web_sys::{Element, Event};
 
-use crate::{build_codes::BuildCodes, context::DomContext};
+use crate::{apply::Applicable, build_codes::BuildCodes, context::DomContext};
 
 new_key_type!(
 	pub struct ChunkId;
@@ -42,7 +42,10 @@ impl<'ctx> ChunkBuild<'ctx> {
 	pub fn base_el(&self) -> Element {
 		self.base_el.clone()
 	}
-	pub fn finish(self) -> Element {
+	pub fn apply(&mut self, what: impl Applicable) {
+		what.apply(self);
+	}
+	pub fn build(self) -> Element {
 		self.build_codes.construct(self.ctx, &self.base_el, self.id);
 		self.base_el
 	}
@@ -69,10 +72,10 @@ impl<'ctx> RemovableChunk<'ctx> {
 		let slab = ctx.store().create_slab();
 		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
-	pub fn finish(self) -> (Element, impl FnOnce(&mut DomContext)) {
+	pub fn build(self) -> (Element, impl FnOnce(&mut DomContext)) {
 		let id = self.0.id;
 		let slab = self.0.slab.unwrap();
-		let el = self.0.finish();
+		let el = self.0.build();
 		(el.clone(), move |ctx| {
 			ctx.chunks.remove(id);
 			ctx.store().remove_slab(slab).unwrap();

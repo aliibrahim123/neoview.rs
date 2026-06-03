@@ -6,7 +6,7 @@ use crate::parse::{ChunkInput, Element, Node, Tag};
 pub fn encode(input: ChunkInput) -> TokenStream {
 	let ChunkInput { build, nodes } = input;
 	let mut codes = quote! {
-		let mut build = #(#build)*;
+		let mut build = &mut #(#build)*;
 		let mut el = __buildcode::start_chunk!(build);
 	};
 
