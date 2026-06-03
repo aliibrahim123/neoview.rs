@@ -1,13 +1,15 @@
 use std::borrow::Cow;
 
+use neoview::{PropId, StoreProv};
 use web_sys::Event;
 
 use crate::{
-	bindings::{AttrValue, ClassValue, NodeValue, PropValue, StyleValue, TextValue},
+	bindings::{AttrValue, ClassValue, Computed, NodeValue, PropValue, StyleValue, TextValue},
 	build_codes::__buildcode::add_event,
 	prelude::{ChunkBuild, DomContext},
 };
 
+#[doc(hidden)]
 pub trait Applicable {
 	fn apply(self, build: &mut ChunkBuild<'_>);
 }
@@ -25,8 +27,6 @@ pub fn el(tag: &str, applicable: impl Applicable) -> impl Applicable {
 		build.build_codes.end_el();
 	}
 }
-
-pub struct AP;
 
 macro_rules! define_tags {
 	($($tag:ident),+) => {
@@ -54,43 +54,62 @@ pub mod tags {
 }
 
 pub fn attr<T>(name: impl Into<Cow<'static, str>>, value: impl AttrValue<T>) -> impl Applicable {
-	move |build: &mut ChunkBuild| {
-		value.apply(build, name.into());
-	}
+	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 pub fn class(name: impl Into<Cow<'static, str>>, value: impl ClassValue) -> impl Applicable {
-	move |build: &mut ChunkBuild| {
-		value.apply(build, name.into());
-	}
+	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 pub fn style<T>(name: impl Into<Cow<'static, str>>, value: impl StyleValue<T>) -> impl Applicable {
-	move |build: &mut ChunkBuild| {
-		value.apply(build, name.into());
-	}
+	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 pub fn prop(name: impl Into<Cow<'static, str>>, value: impl PropValue) -> impl Applicable {
-	move |build: &mut ChunkBuild| {
-		value.apply(build, name.into());
-	}
+	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 pub fn on(event: &str, fun: impl FnMut(&mut DomContext, Event) + 'static) -> impl Applicable {
-	move |build: &mut ChunkBuild| {
-		add_event(build, event, Box::new(fun));
-	}
+	move |build: &mut ChunkBuild| add_event(build, event, Box::new(fun))
 }
 pub fn text<T>(value: impl TextValue<T>) -> impl Applicable {
-	move |build: &mut ChunkBuild| {
-		value.apply(build);
-	}
+	move |build: &mut ChunkBuild| value.apply(build)
 }
 pub fn node<T>(value: impl NodeValue<T>) -> impl Applicable {
-	move |build: &mut ChunkBuild| {
-		value.apply(build);
+	move |build: &mut ChunkBuild| value.apply(build)
+}
+
+#[doc(hidden)]
+pub trait ShowIfValue {
+	fn apply(self, build: &mut ChunkBuild);
+}
+impl ShowIfValue for bool {
+	fn apply(self, build: &mut ChunkBuild) {
+		if !self {
+			build.build_codes.style("display", "none");
+		}
 	}
+}
+impl ShowIfValue for PropId<bool> {
+	fn apply(self, build: &mut ChunkBuild) {
+		StyleValue::apply(
+			move |ctx: &mut DomContext| if ctx.get(self) { "" } else { "none" },
+			build,
+			"display".into(),
+		);
+	}
+}
+impl<F: FnMut(&mut DomContext) -> bool + 'static> ShowIfValue for F {
+	fn apply(mut self, build: &mut ChunkBuild) {
+		StyleValue::apply(
+			move |ctx: &mut DomContext| if self(ctx) { "" } else { "none" },
+			build,
+			"display".into(),
+		);
+	}
+}
+pub fn show_if(value: impl ShowIfValue) -> impl Applicable {
+	move |build: &mut ChunkBuild| value.apply(build)
 }
 
 impl Applicable for () {
-	fn apply(self, build: &mut ChunkBuild<'_>) {}
+	fn apply(self, _build: &mut ChunkBuild<'_>) {}
 }
 macro_rules! impl_applyable_tuple {
 	($($item:ident),*) => {

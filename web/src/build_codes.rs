@@ -129,9 +129,8 @@ impl BuildCodes {
 		self.codes.push(Self::END);
 		self.el_id_stack.pop();
 	}
-	pub fn construct(self, ctx: &mut DomContext, base_el: &Element, id: ChunkId) {
-		let elements = construct(base_el, self.codes, self.props, self.nodes);
-		ctx.chunks[id].elements = elements;
+	pub fn construct(self, base_el: &Element) -> Vec<Element> {
+		construct(base_el, self.codes, self.props, self.nodes)
 	}
 }
 

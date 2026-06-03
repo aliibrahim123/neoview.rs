@@ -212,7 +212,7 @@ impl<T: BasicStyleValue> StyleValue<Static> for T {
 		build.build_codes.style(&name, self.to_str());
 	}
 }
-impl<T: BasicStyleValue + Clone> StyleValue<Prop> for PropId<T> {
+impl<T: BasicStyleValue> StyleValue<Prop> for PropId<T> {
 	fn apply(self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
 		build.build_codes.style(&name, build.ctx.read(self).to_str());
 		add_effect_with_el(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {

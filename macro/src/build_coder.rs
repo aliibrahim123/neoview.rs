@@ -47,7 +47,7 @@ fn encode_node(codes: &mut TokenStream, node: Node) {
 		}
 		Node::DoBlock(block) => codes.extend(quote! {{
 			__buildcode::start_do_block!(build, el);
-			#block
+			#block;
 			__buildcode::end_do_block!(build, el);
 		}}),
 	}

@@ -24,7 +24,6 @@ impl Debug for Chunk {
 	}
 }
 
-#[derive(Debug)]
 pub struct ChunkBuild<'ctx> {
 	pub(crate) ctx: &'ctx mut DomContext,
 	pub(crate) id: ChunkId,
@@ -32,12 +31,13 @@ pub struct ChunkBuild<'ctx> {
 	pub(crate) base_el: Element,
 	#[doc(hidden)]
 	pub build_codes: BuildCodes,
+	ref_queue: Vec<(u64, Box<dyn FnOnce(&mut DomContext, &Element)>)>,
 }
 impl<'ctx> ChunkBuild<'ctx> {
 	pub(crate) fn new(
 		ctx: &'ctx mut DomContext, id: ChunkId, slab: Option<SlabId>, base_el: Element,
 	) -> Self {
-		Self { ctx, slab, base_el, id, build_codes: BuildCodes::new() }
+		Self { ctx, slab, base_el, id, build_codes: BuildCodes::new(), ref_queue: Vec::new() }
 	}
 	pub fn base_el(&self) -> Element {
 		self.base_el.clone()
@@ -45,8 +45,14 @@ impl<'ctx> ChunkBuild<'ctx> {
 	pub fn apply(&mut self, what: impl Applicable) {
 		what.apply(self);
 	}
+	pub fn ref_el(&mut self, fun: impl FnOnce(&mut DomContext, &Element) + 'static) {
+		self.ref_queue.push((self.build_codes.request_id(), Box::new(fun)));
+	}
 	pub fn build(self) -> Element {
-		self.build_codes.construct(self.ctx, &self.base_el, self.id);
+		let elements = self.build_codes.construct(&self.base_el);
+		for (id, fun) in self.ref_queue {
+			fun(self.ctx, &elements[id as usize])
+		}
 		self.base_el
 	}
 }
@@ -62,6 +68,18 @@ impl StoreProv for ChunkBuild<'_> {
 impl ScopedStoreProv for ChunkBuild<'_> {
 	fn slab(&self) -> Option<SlabId> {
 		self.slab
+	}
+}
+impl Debug for ChunkBuild<'_> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("ChunkBuild")
+			.field("ctx", &self.ctx.id)
+			.field("id", &self.id)
+			.field("slab", &self.slab)
+			.field("base_el", &self.base_el)
+			.field("build_codes", &self.build_codes)
+			.field("ref_queue", &self.ref_queue.iter().map(|v| v.0).collect::<Vec<_>>())
+			.finish()
 	}
 }
 
