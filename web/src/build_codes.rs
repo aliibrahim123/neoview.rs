@@ -1,18 +1,37 @@
-use slotmap::Key;
-use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
-use web_sys::{Element, Node};
+use slotmap::{Key, KeyData};
+use wasm_bindgen::prelude::{Closure, JsCast, JsValue, wasm_bindgen};
+use wasmbind_js_file_macro::wasmbind_dump_js_file_as_inline;
+use web_sys::{Element, Event, Node, js_sys::Function};
 
 use crate::{
 	chunk::ChunkId,
-	context::{ContextId, DomContext},
+	context::{ContextId, DomContext, get_ctx},
 };
 
-#[wasm_bindgen(module = "neoview-web-binder")]
+#[wasmbind_dump_js_file_as_inline(path = "${outDir}/binder.js")]
 extern "C" {
 	pub fn construct(
 		target_el: &Element, build_codes: Vec<u8>, props: Vec<JsValue>, nodes: Vec<Node>,
 	) -> Vec<Element>;
+	pub fn register_event_callback(fun: &Function);
+}
 
+pub fn recieve_event(ctx: u64, chunk: u64, fun_id: u64, event: Event) {
+	let ctx = get_ctx(ContextId(ctx)).unwrap();
+	let mut ctx = ctx.borrow_mut();
+	let chunk = ChunkId::from(KeyData::from_ffi(chunk));
+	let mut fun = ctx.chunks[chunk].events[fun_id as usize].take().unwrap();
+	fun(&mut ctx, event);
+	ctx.chunks[chunk].events[fun_id as usize] = Some(fun);
+}
+
+#[wasm_bindgen(start)]
+pub fn init_binder() {
+	let closure = Closure::<dyn Fn(u64, u64, u64, Event)>::new(|ctx, chunk, fun_id, event| {
+		recieve_event(ctx, chunk, fun_id, event)
+	});
+	register_event_callback(closure.as_ref().unchecked_ref());
+	closure.forget();
 }
 
 const COMMON_NAMES: &[&str] = &include!(concat!(env!("OUT_DIR"), "/common_names.rs"));
@@ -352,7 +371,7 @@ pub mod __buildcode {
 	) {
 		let events = &mut build.ctx.chunks[build.id].events;
 		build.build_codes.event(build.ctx.id, build.id, event, events.len() as u64);
-		events.push(fun);
+		events.push(Some(fun));
 	}
 
 	pub use crate::bindings::{AttrValue, ClassValue, ContentValue, PropValue, StyleValue};

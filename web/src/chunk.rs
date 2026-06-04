@@ -16,7 +16,7 @@ new_key_type!(
 #[derive(Default)]
 pub struct Chunk {
 	pub elements: Vec<Element>,
-	pub events: Vec<Box<dyn FnMut(&mut DomContext, Event)>>,
+	pub events: Vec<Option<Box<dyn FnMut(&mut DomContext, Event)>>>,
 }
 impl Debug for Chunk {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
