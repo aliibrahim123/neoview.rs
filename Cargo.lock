@@ -74,11 +74,19 @@ version = "0.0.1"
 dependencies = [
  "neoview",
  "neoview-macro",
+ "neoview-web-macro",
  "rustc-hash",
  "slotmap",
  "wasm-bindgen",
- "wasmbind-js-file-macro",
  "web-sys",
+]
+
+[[package]]
+name = "neoview-web-macro"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
 ]
 
 [[package]]
@@ -210,17 +218,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a929b2c61f11ba3e9bc35b50c1f25cb38e0e892c0c231ae2b8cf78d5dad4437"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "wasmbind-js-file-macro"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b895bdece3b926b188fbb76773375fc6b6f4058499cbe9f32491b0e264b27f71"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

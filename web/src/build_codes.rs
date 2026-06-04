@@ -1,14 +1,14 @@
+use neoview_web_macro::wasm_bindgen_from_build;
 use slotmap::{Key, KeyData};
 use wasm_bindgen::prelude::{Closure, JsCast, JsValue, wasm_bindgen};
-use wasmbind_js_file_macro::wasmbind_dump_js_file_as_inline;
 use web_sys::{Element, Event, Node, js_sys::Function};
 
 use crate::{
 	chunk::ChunkId,
-	context::{ContextId, DomContext, get_ctx},
+	context::{ContextId, get_ctx},
 };
 
-#[wasmbind_dump_js_file_as_inline(path = "${outDir}/binder.js")]
+#[wasm_bindgen_from_build("binder.js")]
 extern "C" {
 	pub fn construct(
 		target_el: &Element, build_codes: Vec<u8>, props: Vec<JsValue>, nodes: Vec<Node>,
@@ -377,7 +377,7 @@ pub mod __buildcode {
 	pub use crate::bindings::{AttrValue, ClassValue, ContentValue, PropValue, StyleValue};
 	#[cfg(feature = "html-types")]
 	pub use attr_html;
-	pub use neoview_macro::kababify;
+	pub use neoview_web_macro::kababify;
 	use web_sys::Event;
 	pub use {
 		attr, attr_common, colorify, content, end_chunk, end_do_block, end_el, refine_value,

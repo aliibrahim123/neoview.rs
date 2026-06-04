@@ -1,4 +1,4 @@
 [workspace]
-members = ["neoview", "macro", "web"]
+members = ["neoview", "macro", "web", "web-macro"]
 resolver = "3"
 exclude = ["tests"]

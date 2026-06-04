@@ -4,7 +4,7 @@ use neoview::{PropId, StoreProv};
 use web_sys::Event;
 
 use crate::{
-	bindings::{AttrValue, ClassValue, Computed, NodeValue, PropValue, StyleValue, TextValue},
+	bindings::{AttrValue, ClassValue, NodeValue, PropValue, StyleValue, TextValue},
 	build_codes::__buildcode::add_event,
 	prelude::{ChunkBuild, DomContext},
 };
