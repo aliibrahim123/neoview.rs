@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{ToTokens, quote};
+use quote::ToTokens;
 
 use crate::{build_coder::encode, cursor::Error, parse::parse_chunk_input};
 

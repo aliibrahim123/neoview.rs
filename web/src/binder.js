@@ -10,7 +10,7 @@ function decode_vuint (buf, cur) {
 	let res = 0, shift = 0, cond = true;
 	while (cond) {
 		let byte = decode_u8(buf, cur);
-		res |= byte & 0b0111_1111 << shift;
+		res |= (byte & 0b0111_1111) << shift;
 		shift += 7;
 		cond = (byte & 0b1000_0000) != 0;
 	}
@@ -53,7 +53,7 @@ function construct_el (el, build_codes, cur, el_refs, props, nodes) {
 				let tag = decode_name(build_codes, cur);
 				let child = document.createElement(tag)
 				construct_el(child, build_codes, cur, el_refs, props, nodes);
-				el.append(el);
+				el.append(child);
 				break
 			}
 			case EL_ID: {
@@ -108,8 +108,10 @@ function construct_el (el, build_codes, cur, el_refs, props, nodes) {
 }
 
 export function construct (target_el, build_codes, props, nodes) {
+	// globalThis.target_el = target_el
+	console.log(target_el, build_codes, props, nodes);
 	let cur = { ind: 0 };
-	let el_refs = [];
+	let el_refs = [target_el];
 	construct_el(target_el, build_codes, cur, el_refs, props, nodes);
 	if (cur.ind !== build_codes.length) throw "binder: excess input";
 	return el_refs;

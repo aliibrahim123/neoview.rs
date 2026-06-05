@@ -1,3 +1,4 @@
+use neoview::Store;
 use neoview_web_macro::wasm_bindgen_from_build;
 use slotmap::{Key, KeyData};
 use wasm_bindgen::prelude::{Closure, JsCast, JsValue, wasm_bindgen};
@@ -16,18 +17,19 @@ extern "C" {
 	pub fn register_event_callback(fun: &Function);
 }
 
-pub fn recieve_event(ctx: u64, chunk: u64, fun_id: u64, event: Event) {
-	let ctx = get_ctx(ContextId(ctx)).unwrap();
+pub fn recieve_event(ctx: u32, chunk: u32, fun_id: u32, event: Event) {
+	let ctx = get_ctx(ContextId(ctx as u64)).unwrap();
 	let mut ctx = ctx.borrow_mut();
-	let chunk = ChunkId::from(KeyData::from_ffi(chunk));
+	let chunk = ChunkId::from(KeyData::from_ffi(chunk as u64));
 	let mut fun = ctx.chunks[chunk].events[fun_id as usize].take().unwrap();
 	fun(&mut ctx, event);
 	ctx.chunks[chunk].events[fun_id as usize] = Some(fun);
+	Store::flush_updates(&mut *ctx);
 }
 
 #[wasm_bindgen(start)]
-pub fn init_binder() {
-	let closure = Closure::<dyn Fn(u64, u64, u64, Event)>::new(|ctx, chunk, fun_id, event| {
+pub fn neoview_init_binder() {
+	let closure = Closure::<dyn Fn(u32, u32, u32, Event)>::new(|ctx, chunk, fun_id, event| {
 		recieve_event(ctx, chunk, fun_id, event)
 	});
 	register_event_callback(closure.as_ref().unchecked_ref());
@@ -148,7 +150,8 @@ impl BuildCodes {
 		self.codes.push(Self::END);
 		self.el_id_stack.pop();
 	}
-	pub fn construct(self, base_el: &Element) -> Vec<Element> {
+	pub fn construct(mut self, base_el: &Element) -> Vec<Element> {
+		self.codes.push(Self::END);
 		construct(base_el, self.codes, self.props, self.nodes)
 	}
 }
@@ -298,7 +301,7 @@ pub mod __buildcode {
 			);
 		}};
 		($build:expr, $el:expr, [style.$prop:literal], $($value:tt)*) => {
-			__buildcode::ClassValue::apply(
+			__buildcode::StyleValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build, $prop.into()
 			);
 		};

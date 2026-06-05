@@ -65,7 +65,7 @@ impl BasicAttrValue for bool {
 	}
 }
 macro_rules! basic_attr_int {
-	($($ty:ty)*) => {
+	($($ty:ty),*) => {
 		$(impl BasicAttrValue for $ty {
 			fn with(&self, fun: impl FnOnce(Option<&str>)) {
 				fun(Some(&self.to_string()))
@@ -73,7 +73,7 @@ macro_rules! basic_attr_int {
 		})*
 	};
 }
-basic_attr_int!(i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64);
+basic_attr_int!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f32, f64, char);
 impl<T: BasicAttrValue> BasicAttrValue for &T {
 	fn with(&self, fun: impl FnOnce(Option<&str>)) {
 		(*self).with(fun)
@@ -286,7 +286,7 @@ impl BasicTextValue for String {
 	}
 }
 macro_rules! basic_text_primitive {
-	($($ty:ty)+) => {
+	($($ty:ty),+) => {
 		$(impl BasicTextValue for $ty {
 			fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
 				fun(&self.to_string())
@@ -294,7 +294,7 @@ macro_rules! basic_text_primitive {
 		})+
 	};
 }
-basic_text_primitive!(bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64);
+basic_text_primitive!(bool, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f32, f64, char);
 impl<T: BasicTextValue> BasicTextValue for Option<T> {
 	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
 		if let Some(value) = self { value.with(fun) } else { fun("") }

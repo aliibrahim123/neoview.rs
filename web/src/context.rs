@@ -48,6 +48,9 @@ impl DomContext {
 		};
 		CtxHandle::new(ctx)
 	}
+	pub fn id(&self) -> ContextId {
+		self.id
+	}
 	pub fn root_el(&self) -> Element {
 		self.root_el.clone()
 	}
@@ -99,6 +102,7 @@ thread_local!(
 
 #[derive(Debug, Clone)]
 pub struct CtxHandle {
+	id: ContextId,
 	ctx: Rc<RefCell<DomContext>>,
 }
 impl CtxHandle {
@@ -107,13 +111,19 @@ impl CtxHandle {
 		let ctx = Rc::new(RefCell::new(ctx));
 		let weak = Rc::downgrade(&ctx);
 		CTX_MAP.with_borrow_mut(|map| map.insert(id, weak));
-		Self { ctx }
+		Self { id, ctx }
+	}
+	pub fn id(&self) -> ContextId {
+		self.id
 	}
 	pub fn borrow(&self) -> Ref<'_, DomContext> {
 		self.ctx.borrow()
 	}
 	pub fn borrow_mut(&self) -> RefMut<'_, DomContext> {
 		self.ctx.borrow_mut()
+	}
+	pub unsafe fn forget(self) {
+		std::mem::forget(self);
 	}
 }
 impl Drop for CtxHandle {
@@ -125,5 +135,5 @@ impl Drop for CtxHandle {
 	}
 }
 pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
-	CTX_MAP.with_borrow(|map| map.get(&id).and_then(Weak::upgrade).map(|ctx| CtxHandle { ctx }))
+	CTX_MAP.with_borrow(|map| map.get(&id).and_then(Weak::upgrade).map(|ctx| CtxHandle { id, ctx }))
 }

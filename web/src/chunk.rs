@@ -53,6 +53,7 @@ impl<'ctx> ChunkBuild<'ctx> {
 		for (id, fun) in self.ref_queue {
 			fun(self.ctx, &elements[id as usize])
 		}
+		self.ctx.chunks[self.id].elements = elements;
 		self.base_el
 	}
 }
@@ -90,7 +91,7 @@ impl<'ctx> RemovableChunk<'ctx> {
 		let slab = ctx.store().create_slab();
 		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
-	pub fn build(self) -> (Element, impl FnOnce(&mut DomContext)) {
+	pub fn build(self) -> (Element, impl FnOnce(&mut DomContext) + 'static) {
 		let id = self.0.id;
 		let slab = self.0.slab.unwrap();
 		let el = self.0.build();

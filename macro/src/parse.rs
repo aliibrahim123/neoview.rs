@@ -1,7 +1,7 @@
 use proc_macro2::{Delimiter, Ident, Literal, Span, TokenStream, TokenTree};
 use quote::{ToTokens, TokenStreamExt, quote};
 
-use crate::cursor::{Cursor, Error, Token, err, match_punct};
+use crate::cursor::{Cursor, Error, err, match_punct};
 
 #[derive(Debug)]
 pub struct Path {
