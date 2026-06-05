@@ -9,7 +9,6 @@ use crate::{
 	prelude::{ChunkBuild, DomContext},
 };
 
-#[doc(hidden)]
 pub trait Applicable {
 	fn apply(self, build: &mut ChunkBuild<'_>);
 }

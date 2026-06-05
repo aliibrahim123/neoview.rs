@@ -11,7 +11,7 @@ pub mod html_types;
 
 pub use {
 	chunk::{ChunkBuild, RemovableChunk},
-	context::{CtxHandle, CtxOptions, DomContext, get_ctx},
+	context::{CtxHandle, CtxOptions, DomContext, get_ctx, use_ctx},
 	neoview,
 	neoview::chunk,
 };

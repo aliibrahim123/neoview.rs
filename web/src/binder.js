@@ -108,8 +108,6 @@ function construct_el (el, build_codes, cur, el_refs, props, nodes) {
 }
 
 export function construct (target_el, build_codes, props, nodes) {
-	// globalThis.target_el = target_el
-	console.log(target_el, build_codes, props, nodes);
 	let cur = { ind: 0 };
 	let el_refs = [target_el];
 	construct_el(target_el, build_codes, cur, el_refs, props, nodes);

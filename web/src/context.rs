@@ -137,3 +137,10 @@ impl Drop for CtxHandle {
 pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 	CTX_MAP.with_borrow(|map| map.get(&id).and_then(Weak::upgrade).map(|ctx| CtxHandle { id, ctx }))
 }
+pub fn use_ctx(id: ContextId, fun: impl FnOnce(&mut DomContext)) -> Result<(), ()> {
+	let ctx = get_ctx(id).ok_or(())?;
+	let mut ctx = ctx.borrow_mut();
+	fun(&mut ctx);
+	Store::flush_updates(&mut *ctx);
+	Ok(())
+}
