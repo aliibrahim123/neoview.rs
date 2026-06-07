@@ -90,7 +90,12 @@ impl<Ctx: Context> Store<Ctx> {
 		let id = self.props.insert(Box::new(value));
 		PropId::new(id)
 	}
-	pub fn prop_in<T: 'static>(&mut self, slab: SlabId, value: T) -> Result<PropId<T>, Error> {
+	pub fn prop_in<T: 'static>(
+		&mut self, slab: Option<SlabId>, value: T,
+	) -> Result<PropId<T>, Error> {
+		let Some(slab) = slab else {
+			return Ok(self.prop(value));
+		};
 		if !self.slabs.contains_key(&slab) {
 			return Err(Error::Removed);
 		}
@@ -171,8 +176,11 @@ impl<Ctx: Context> Store<Ctx> {
 		Updater::add_effect(ctx, fun, Some((read, write)), init_run);
 	}
 	pub fn effect_in(
-		ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) + 'static,
+		ctx: &mut Ctx, slab: Option<SlabId>, fun: impl FnMut(&mut Ctx) + 'static,
 	) -> Result<(), Error> {
+		let Some(slab) = slab else {
+			return Ok(Store::effect(ctx, fun));
+		};
 		if !ctx.store().slabs.contains_key(&slab) {
 			return Err(Error::Removed);
 		}
@@ -181,9 +189,12 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 	pub fn effect_manual_in(
-		ctx: &mut Ctx, slab: SlabId, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+		ctx: &mut Ctx, slab: Option<SlabId>, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 		fun: impl FnMut(&mut Ctx) + 'static, init_run: bool,
 	) -> Result<(), Error> {
+		let Some(slab) = slab else {
+			return Ok(Store::effect_manual(ctx, read, write, fun, init_run));
+		};
 		if !ctx.store().slabs.contains_key(&slab) {
 			return Err(Error::Removed);
 		}
@@ -221,8 +232,11 @@ impl<Ctx: Context> Store<Ctx> {
 		Self::computed_manual(ctx, fun).0
 	}
 	pub fn computed_in<T: 'static>(
-		ctx: &mut Ctx, slab: SlabId, fun: impl FnMut(&mut Ctx) -> T + 'static,
+		ctx: &mut Ctx, slab: Option<SlabId>, fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> Result<PropId<T>, Error> {
+		let Some(slab) = slab else {
+			return Ok(Store::computed(ctx, fun));
+		};
 		if !ctx.store().slabs.contains_key(&slab) {
 			return Err(Error::Removed);
 		}

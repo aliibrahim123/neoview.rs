@@ -76,6 +76,31 @@ pub trait LocalStoreProv: StoreProv {
 	fn slab(&self) -> SlabId;
 	fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
 		let slab = self.slab();
+		self.store().prop_in(Some(slab), value).unwrap()
+	}
+	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
+		let slab = self.slab();
+		Store::effect_in(self.ctx(), Some(slab), fun).unwrap();
+	}
+	fn effect_manual(
+		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
+		fun: impl FnMut(&mut Self::Ctx) + 'static,
+	) {
+		let slab = self.slab();
+		Store::effect_manual_in(self.ctx(), Some(slab), read, write, fun, true).unwrap();
+	}
+	fn computed<T: 'static>(
+		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
+	) -> PropId<T> {
+		let slab = self.slab();
+		Store::computed_in(self.ctx(), Some(slab), fun).unwrap()
+	}
+}
+
+pub trait ScopedStoreProv: StoreProv {
+	fn slab(&self) -> Option<SlabId>;
+	fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
+		let slab = self.slab();
 		self.store().prop_in(slab, value).unwrap()
 	}
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
@@ -94,40 +119,5 @@ pub trait LocalStoreProv: StoreProv {
 	) -> PropId<T> {
 		let slab = self.slab();
 		Store::computed_in(self.ctx(), slab, fun).unwrap()
-	}
-}
-
-pub trait ScopedStoreProv: StoreProv {
-	fn slab(&self) -> Option<SlabId>;
-	fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
-		match self.slab() {
-			Some(slab) => self.store().prop_in(slab, value).unwrap(),
-			None => self.store().prop(value),
-		}
-	}
-	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
-		match self.slab() {
-			Some(slab) => Store::effect_in(self.ctx(), slab, fun).unwrap(),
-			None => Store::effect(self.ctx(), fun),
-		}
-	}
-	fn effect_manual(
-		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
-		fun: impl FnMut(&mut Self::Ctx) + 'static,
-	) {
-		match self.slab() {
-			Some(slab) => {
-				Store::effect_manual_in(self.ctx(), slab, read, write, fun, true).unwrap()
-			}
-			None => Store::effect_manual(self.ctx(), read, write, fun, true),
-		}
-	}
-	fn computed<T: 'static>(
-		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
-	) -> PropId<T> {
-		match self.slab() {
-			Some(slab) => Store::computed_in(self.ctx(), slab, fun).unwrap(),
-			None => Store::computed(self.ctx(), fun),
-		}
 	}
 }

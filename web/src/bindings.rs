@@ -24,10 +24,7 @@ fn add_effect(
 	build: &mut ChunkBuild, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 	fun: impl FnMut(&mut DomContext) + 'static,
 ) {
-	match build.slab() {
-		Some(slab) => Store::effect_manual_in(build.ctx, slab, read, write, fun, false).unwrap(),
-		None => Store::effect_manual(build.ctx, read, write, fun, false),
-	}
+	Store::effect_manual_in(build.ctx, build.slab, read, write, fun, false).unwrap();
 }
 fn add_effect_with_el(
 	build: &mut ChunkBuild, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
@@ -38,7 +35,7 @@ fn add_effect_with_el(
 	let fun = move |ctx: &mut DomContext| {
 		fun(ctx, chunk, el as usize);
 	};
-	add_effect(build, read, write, fun);
+	Store::effect_manual_in(build.ctx, build.slab, read, write, fun, false).unwrap();
 }
 
 trait BasicAttrValue {

@@ -91,15 +91,11 @@ impl<'ctx> RemovableChunk<'ctx> {
 		let slab = ctx.store().create_slab();
 		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
-	pub fn build(self) -> (Element, impl FnOnce(&mut DomContext) + 'static) {
+	pub fn build(self) -> (Element, ChunkRemover) {
 		let id = self.0.id;
 		let slab = self.0.slab.unwrap();
 		let el = self.0.build();
-		(el.clone(), move |ctx| {
-			ctx.chunks.remove(id);
-			ctx.store().remove_slab(slab).unwrap();
-			el.remove();
-		})
+		(el.clone(), ChunkRemover { id, slab, el })
 	}
 }
 impl<'ctx> Deref for RemovableChunk<'ctx> {
@@ -111,5 +107,24 @@ impl<'ctx> Deref for RemovableChunk<'ctx> {
 impl<'ctx> DerefMut for RemovableChunk<'ctx> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.0
+	}
+}
+#[derive(Debug)]
+pub struct ChunkRemover {
+	id: ChunkId,
+	slab: SlabId,
+	el: Element,
+}
+impl Drop for ChunkRemover {
+	fn drop(&mut self) {
+		panic!("a chunk is dropped without being removed")
+	}
+}
+impl ChunkRemover {
+	pub fn remove(self, ctx: &mut DomContext) {
+		ctx.chunks.remove(self.id);
+		ctx.store().remove_slab(self.slab).unwrap();
+		self.el.remove();
+		std::mem::forget(self);
 	}
 }
