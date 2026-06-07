@@ -1,19 +1,35 @@
-use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
+use std::{borrow::Cow, collections::HashMap, hash::Hash};
 
-use neoview::{GlobalStoreProv, PropId, ScopedStoreProv, Store, StoreProv};
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use neoview::{PropId, ScopedStoreProv, Store, StoreProv};
+use rustc_hash::FxBuildHasher;
 use web_sys::Element;
 
 use crate::{chunk::ChunkRemover, context::DomContext, prelude::ChunkBuild};
 
-pub fn render_list<T: Eq + Hash + Clone>(
-	ctx: &mut DomContext, prop: PropId<impl AsRef<[T]>>,
-	item_chunk: impl FnMut(&ChunkBuild, T, PropId<usize>),
+pub fn render_list<T: Clone, K: Eq + Hash + 'static>(
+	build: &mut ChunkBuild, prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
+	tag: impl Into<Cow<'static, str>>, mut item_chunk: impl FnMut(&mut ChunkBuild, T) + 'static,
 ) {
+	#[rustfmt::skip]
+	render_list_core(
+		build, prop, key_fn, false, tag,
+		move |build, item, _| item_chunk(build, item),
+	);
 }
-fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + Clone + 'static>(
-	build: &mut ChunkBuild, prop: PropId<TCont>, tag: impl Into<Cow<'static, str>>,
-	enumerate: bool, key_fn: impl Fn(&T) -> K + 'static,
+pub fn render_list_enumerated<T: Clone, K: Eq + Hash + 'static>(
+	build: &mut ChunkBuild, prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
+	tag: impl Into<Cow<'static, str>>,
+	mut item_chunk: impl FnMut(&mut ChunkBuild, T, PropId<usize>) + 'static,
+) {
+	#[rustfmt::skip]
+	render_list_core(
+		build, prop, key_fn, true, tag,
+		move |build, item, index| item_chunk(build, item, index.unwrap()),
+	);
+}
+fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
+	build: &mut ChunkBuild, prop: PropId<TCont>, key_fn: impl Fn(&T) -> K + 'static,
+	enumerate: bool, tag: impl Into<Cow<'static, str>>,
 	mut item_chunk: impl FnMut(&mut ChunkBuild, T, Option<PropId<usize>>) + 'static,
 ) {
 	let tag = tag.into();
@@ -47,7 +63,6 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + Clone + 'static>
 				},
 			};
 			diff(&old_keys, &new_keys, &mut differ);
-			debug_assert!(new_items.iter().all(|v| v.is_some()));
 			(old_items, old_keys) = (new_items, new_keys);
 		};
 		Store::effect_manual_in(ctx, slab, vec![prop.erase_type()], Vec::new(), fun, false).unwrap()
@@ -84,14 +99,11 @@ impl<F: FnMut(&mut DomContext, usize) -> Item> ReconcileOps for Differ<'_, F> {
 		match reference {
 			Some(before) => {
 				let el = &self.new_items[before].as_ref().unwrap().el;
-				el.before_with_node_1(&item.el).unwrap();
-				self.new_items.insert(before, Some(item));
+				el.before_with_node_1(&item.el).unwrap()
 			}
-			None => {
-				self.parent.append_with_node_1(&item.el).unwrap();
-				self.new_items.push(Some(item));
-			}
+			None => self.parent.append_with_node_1(&item.el).unwrap(),
 		}
+		self.new_items[new_ind] = Some(item);
 	}
 	fn _move(&mut self, new_ind: usize, reference: Option<usize>) {
 		let item = self.new_items[new_ind].as_ref().unwrap();

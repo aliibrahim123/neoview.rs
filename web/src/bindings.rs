@@ -1,7 +1,7 @@
 // sorry trait solver for this madness
 use std::borrow::Cow;
 
-use neoview::{PropId, ScopedStoreProv, Store, StoreProv, TrackResult};
+use neoview::{PropId, Store, StoreProv, TrackResult};
 use wasm_bindgen::prelude::{JsCast, JsValue};
 use web_sys::{Element, HtmlElement, Node, Text, js_sys::Reflect};
 
@@ -70,7 +70,7 @@ macro_rules! basic_attr_int {
 		})*
 	};
 }
-basic_attr_int!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f32, f64, char);
+basic_attr_int!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, char);
 impl<T: BasicAttrValue> BasicAttrValue for &T {
 	fn with(&self, fun: impl FnOnce(Option<&str>)) {
 		(*self).with(fun)
@@ -291,7 +291,9 @@ macro_rules! basic_text_primitive {
 		})+
 	};
 }
-basic_text_primitive!(bool, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f32, f64, char);
+basic_text_primitive!(
+	bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, usize, u128, f32, f64, char
+);
 impl<T: BasicTextValue> BasicTextValue for Option<T> {
 	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
 		if let Some(value) = self { value.with(fun) } else { fun("") }

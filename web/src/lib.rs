@@ -13,6 +13,7 @@ mod list_render;
 pub use {
 	chunk::{ChunkBuild, RemovableChunk},
 	context::{CtxHandle, CtxOptions, DomContext, get_ctx, use_ctx},
+	list_render::{render_list, render_list_enumerated},
 	neoview,
 	neoview::chunk,
 };
