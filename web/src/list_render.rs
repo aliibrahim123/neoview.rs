@@ -180,12 +180,18 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 		}
 	} else {
 		// 4. Map Phase: Build a map of the remaining new items.
-		let mut new_ind_map = HashMap::with_capacity_and_hasher(new_end - start, FxBuildHasher);
-		for ind in start..new_end {
+		let new_left = new_end - start;
+		let mut new_ind_map = HashMap::with_capacity_and_hasher(new_left, FxBuildHasher);
+
+		let mut next_duplicate = vec![None; new_left];
+
+		for ind in (start..new_end).rev() {
+			if let Some(&existing_ind) = new_ind_map.get(&new[ind]) {
+				next_duplicate[ind - start] = Some(existing_ind);
+			}
 			new_ind_map.insert(&new[ind], ind);
 		}
 
-		let new_left = new_end - start;
 		// Tracks where new items came from. `0` means it's a brand new item.
 		let mut sources = vec![0isize; new_left];
 		let mut moved = false;
@@ -199,9 +205,15 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 				continue;
 			}
 
-			if let Some(&new_ind) = new_ind_map.get(&old[ind]) {
+			if let Some(new_ind) = new_ind_map.remove(&old[ind]) {
+				let source_idx = new_ind - start;
+
+				if let Some(next_ind) = next_duplicate[source_idx] {
+					new_ind_map.insert(&new[next_ind], next_ind);
+				}
+
 				// Item is kept. Record its old index (+1 to reserve 0 for "new").
-				sources[new_ind - start] = (ind + 1) as isize;
+				sources[source_idx] = (ind + 1) as isize;
 				ops.set_index(ind, new_ind);
 
 				// If a new index is smaller than a previous one, items crossed paths (moved).
@@ -211,10 +223,11 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 					moved = true;
 				}
 				patched += 1;
-			} else {
-				// Item doesn't exist in the new array.
-				ops.remove(ind);
+				continue;
 			}
+
+			// Item doesn't exist in the new array
+			ops.remove(ind);
 		}
 
 		// 5. Patch Phase: Apply DOM mutations backwards.
