@@ -1,7 +1,10 @@
-use proc_macro2::{Delimiter, Ident, Literal, Span, TokenStream, TokenTree};
+use proc_macro2::{
+	Delimiter::{self, Brace},
+	Ident, Literal, Span, TokenStream, TokenTree,
+};
 use quote::{ToTokens, TokenStreamExt, quote};
 
-use crate::cursor::{Cursor, Error, err, match_punct};
+use crate::cursor::{Cursor, Error, Token, err, match_punct};
 
 #[derive(Debug)]
 pub struct Path {
@@ -23,7 +26,7 @@ impl ToTokens for Path {
 #[derive(Debug)]
 pub enum Node {
 	Element(Element),
-	DoBlock(TokenStream),
+	DoBlock(Vec<TokenTree>),
 	Content(Vec<TokenTree>),
 }
 
@@ -65,8 +68,26 @@ fn parse_children(cur: &mut Cursor) -> Result<Vec<Node>, Error> {
 	let mut children = Vec::new();
 	while !cur.is_end() {
 		if cur.try_kw("do") {
-			let block = cur.group(Delimiter::Brace)?;
-			children.push(Node::DoBlock(block.stream()));
+			let block = cur.group(Brace)?;
+			children.push(Node::DoBlock(block.stream().into_iter().collect()));
+		} else if cur.test_kw("if") {
+			let mut block = Vec::new();
+			loop {
+				block.extend(cur.eat_until(
+					|token| matches!(token, Token::Group(group) if group.delimiter() == Brace),
+				));
+				block.push(cur.group(Brace)?.into());
+				if !cur.test_kw("else") {
+					break;
+				}
+			}
+			children.push(Node::DoBlock(block))
+		} else if cur.test_kw("for") | cur.test_kw("match") {
+			let mut block = cur.eat_until(
+				|token| matches!(token, Token::Group(group) if group.delimiter() == Brace),
+			);
+			block.push(cur.group(Brace)?.into());
+			children.push(Node::DoBlock(block))
 		} else if let Some(el) = try_parse_el(cur)? {
 			children.push(Node::Element(el));
 			if !match_punct!(cur.peek(), ',') {

@@ -30,11 +30,6 @@ impl From<TokenTree> for Token {
 		}
 	}
 }
-fn pack_punct(char: char, span: Span, spacing: Spacing) -> Punct {
-	let mut punct = Punct::new(char, spacing);
-	punct.set_span(span);
-	punct
-}
 impl ToTokens for Token {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
 		match self {
@@ -45,6 +40,26 @@ impl ToTokens for Token {
 			}
 			Token::Literal(lit) => lit.to_tokens(tokens),
 			Token::End(_) => (),
+		}
+	}
+}
+fn pack_punct(char: char, span: Span, spacing: Spacing) -> Punct {
+	let mut punct = Punct::new(char, spacing);
+	punct.set_span(span);
+	punct
+}
+impl Into<TokenTree> for Token {
+	fn into(self) -> TokenTree {
+		match self {
+			Self::Ident(ident) => TokenTree::Ident(ident),
+			Self::Literal(lit) => TokenTree::Literal(lit),
+			Self::Punct(char, span, spacing) => {
+				let mut punc = Punct::new(char, spacing);
+				punc.set_span(span);
+				TokenTree::Punct(punc)
+			}
+			Self::Group(group) => TokenTree::Group(group),
+			_ => panic!(),
 		}
 	}
 }
@@ -161,6 +176,10 @@ impl Cursor {
 			return true;
 		}
 		false
+	}
+	pub fn test_kw(&mut self, kw: &str) -> bool {
+		let Token::Ident(ident) = self.peek() else { return false };
+		ident == kw
 	}
 	pub fn literal(&mut self) -> Result<Literal, Error> {
 		if let Some(lit) = self.try_literal() {
