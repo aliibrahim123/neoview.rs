@@ -77,14 +77,12 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 		};
 		Store::effect_manual_in(ctx, slab, vec![prop.erase_type()], Vec::new(), fun, false)
 			.unwrap();
-		if let Some(slab) = slab {
-			let remover = move |ctx: &mut DomContext| {
-				for item in old_items_clone.borrow_mut().drain(..) {
-					item.unwrap().remover.remove(ctx);
-				}
-			};
-			ctx.store().add_cleaner_in(slab, remover).unwrap()
-		}
+		let remover = move |ctx: &mut DomContext| {
+			for item in old_items_clone.borrow_mut().drain(..) {
+				item.unwrap().remover.remove(ctx);
+			}
+		};
+		ctx.store().add_cleaner_in(slab, remover).unwrap()
 	});
 }
 

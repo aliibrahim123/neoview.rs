@@ -96,7 +96,7 @@ impl<'ctx> RemovableChunk<'ctx> {
 		move |build: &mut ChunkBuild| {
 			build.build_codes.node(el.into());
 			if let Some(slab) = build.slab {
-				build.store().add_cleaner_in(slab, move |ctx| remover.remove(ctx)).unwrap()
+				build.store().add_cleaner_in(Some(slab), move |ctx| remover.remove(ctx)).unwrap()
 			}
 		}
 	}
@@ -131,7 +131,7 @@ impl Drop for ChunkRemover {
 }
 impl ChunkRemover {
 	pub fn remove(self, ctx: &mut DomContext) {
-		Store::remove_slab(ctx, self.slab).unwrap();
+		_ = Store::remove_slab(ctx, self.slab);
 		ctx.chunks.remove(self.id);
 		self.el.remove();
 		std::mem::forget(self);

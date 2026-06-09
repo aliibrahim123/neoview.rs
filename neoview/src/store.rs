@@ -58,6 +58,39 @@ impl TrackResult {
 	}
 }
 
+/// the container of the reactivity system.
+///
+/// the `Store` is the structure that owns and manages the entire reactivity system with its [properties](#property-managment) and [effects](#effects).
+///
+/// it is tightly copouled to a specific [`Context`] that owns it, and its lifetime is identical to it.
+///
+/// every interaction with the reactive system requires a mutable access to the `Store`, however all the common operations are redirected through the family of [`StoreProv`](crate::StoreProv)iders traits.
+///
+/// ## example
+/// ```
+/// let count = store.prop(0);
+/// assert_eq!(store.get(count), 0);
+/// Store::effect(ctx, move |ctx| println!("count: {}", ctx.get(count)))
+/// store.set(count, 1);
+/// assert_eq!(store.get(count), 1);
+///
+/// let doubled = Store::computed(ctx, move |ctx| ctx.get(count) * 2);
+/// store.update(count, |cnt| *cnt += 1);
+/// assert_eq!(store.get(doubled), 4);
+/// Store::flush_updates(ctx); // => count: 2
+/// ```
+///
+/// # sections
+/// due to the large api surface exposed by the `Store`, its documentations has been splitted into multiple parts.
+///
+/// they are:
+/// - [property managment](#property-managment).
+/// - [property access](#property-access).
+/// - [Effects and Computed Properties](#effects).
+/// - [Slab Managment](#slab-managment).
+/// - [Updating](#updating).
+/// - [Tracking](#tracking).
+/// - [Store Managment](#store-managment).
 pub struct Store<Ctx> {
 	pub(crate) props: SlotMap<ItemId, Box<dyn Any>>,
 
@@ -107,6 +140,91 @@ impl<Ctx> PartialEq for Store<Ctx> {
 	}
 }
 impl<Ctx> Eq for Store<Ctx> {}
+
+/// <h2 id=property-managment>Property Managment</h2>
+///
+/// reactive properties managment is the sole purpose of the `Store`.
+///
+/// a reactive property is any value that is used inside the reactivity system, it can be of any type not containing references (`'static` is allowed) and it is owned by the `Store`.
+///
+/// a property is created by [`prop`](Store::prop), identified by a [`PropId`], accesed by the [property access methods](#property-access), and can be binded to and by multiple [effects](#effects).
+///
+/// individual properties can not be removed, they can only be removed with the store or their owner slab.
+impl<Ctx: Context> Store<Ctx> {
+	/// defines a new reactive property in the global scope.
+	///
+	/// it accepts the property initial `value`, and returns its [`PropId`],
+	///
+	/// # example
+	/// ```
+	/// let count = store.prop(0);
+	/// let text = store.prop("hello".to_string());
+	/// struct Value { a: i32, b: f64, c: String, d: Vec<u8> }
+	/// let value = store.prop(Value {
+	/// 	a: 1, b: 1.5, c: "abc".to_string(), d: vec![1, 2, 3],
+	/// });
+	/// ```
+	pub fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
+		let id = self.props.insert(Box::new(value));
+		PropId::new(id)
+	}
+
+	/// defines a new reactive property in a specific scope.
+	///
+	/// it accepts the target `slab` and the property initial `value`, and returns its [`PropId`].
+	///
+	/// if `slab` is [`None`], the property is defined in the global scope.
+	///
+	/// # example
+	/// ```
+	/// let slab = store.create_slab();
+	/// let count = store.prop_in(Some(slab), 0);
+	/// let text = store.prop_in(Some(slab), "hello".to_string());
+	///
+	/// // the same
+	/// let nb = store.prop(1.5);
+	/// let nb = store.prop_in(None, 1.5);
+	/// ```
+	pub fn prop_in<T: 'static>(
+		&mut self, slab: Option<SlabId>, value: T,
+	) -> Result<PropId<T>, Error> {
+		let Some(slab) = slab else {
+			return Ok(self.prop(value));
+		};
+		if !self.has_slab(slab) {
+			return Err(Error::Removed);
+		}
+		let id = self.prop(value);
+		self.slab(slab).props.push(id.0);
+		Ok(id)
+	}
+
+	/// check whether a reactive property is inside the `Store`.
+	///
+	/// # example
+	/// ```
+	/// let nb = store.prop_in(Some(slab), 1);
+	/// assert!(store.contains(nb));
+	/// Store::remove_slab(ctx, slab);
+	/// assert!(!store.contains(nb));
+	/// ```
+	pub fn contains<T>(&self, id: PropId<T>) -> bool {
+		self.props.contains_key(id.0)
+	}
+}
+/// <h2 id=property-access>Property Access</h2>
+impl<Ctx: Context> Store<Ctx> {}
+/// <h2 id=effects>Effects and Computed Properties</h2>
+impl<Ctx: Context> Store<Ctx> {}
+/// <h2 id=slab-managment>Slab Managment</h2>
+impl<Ctx: Context> Store<Ctx> {}
+/// <h2 id=updating>Updating</h2>
+impl<Ctx: Context> Store<Ctx> {}
+/// <h2 id=tracking>Tracking</h2>
+impl<Ctx: Context> Store<Ctx> {}
+/// <h2 id=store-managment>Store Managment</h2>
+impl<Ctx: Context> Store<Ctx> {}
+
 impl<Ctx: Context> Store<Ctx> {
 	pub fn create_slab(&mut self) -> SlabId {
 		let id = self.next_slab;
@@ -160,28 +278,6 @@ impl<Ctx: Context> Store<Ctx> {
 		}
 		self.slab(slab).cleaner.push(Box::new(fun));
 		Ok(())
-	}
-
-	pub fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
-		let id = self.props.insert(Box::new(value));
-		PropId::new(id)
-	}
-	pub fn prop_in<T: 'static>(
-		&mut self, slab: Option<SlabId>, value: T,
-	) -> Result<PropId<T>, Error> {
-		let Some(slab) = slab else {
-			return Ok(self.prop(value));
-		};
-		if !self.has_slab(slab) {
-			return Err(Error::Removed);
-		}
-		let id = self.prop(value);
-		self.slab(slab).props.push(id.0);
-		Ok(id)
-	}
-
-	pub fn contains<T>(&self, id: PropId<T>) -> bool {
-		self.props.contains_key(id.0)
 	}
 
 	pub fn try_peek<T: 'static>(&self, id: PropId<T>) -> Option<&T> {
