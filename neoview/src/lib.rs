@@ -12,9 +12,9 @@
 //! ```rust
 //! let ctx = /* some `Context` */
 //! let nb = ctx.prop(1);
-//! println!("{}", ctx.get(nb)); // => 1
+//! assert_eq!(ctx.get(nb), 1);
 //! ctx.write(nb, 2);
-//! println!("{}", ctx.get(nb)); // => 2
+//! assert_eq!(ctx.get(nb), 2);
 //! ```
 //!
 //! Reactive logic can be placed inside [`effect`s](Store::effect), and derived properties are created via [`computed`](Store::computed).
@@ -85,6 +85,7 @@ mod store;
 mod updater;
 
 #[cfg(doc)]
+/// other documentation sections.
 pub mod docs {
 	pub mod render_integ;
 }
@@ -97,14 +98,14 @@ pub use {
 	store::{Store, TrackResult},
 };
 
+/// an error raised by the reactivity system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
+	/// the requested thing is removed.
 	Removed,
+	/// requested to track while curently tracking.
 	Tracking,
+	/// requesting to end tracking while not tracking currently.
 	NotTracking,
-}
-
-#[test]
-fn a() {
-	println!("{:?}", 'a'.to_string())
 }

@@ -90,6 +90,7 @@ impl StoreProv for DomContext {
 impl GlobalStoreProv for DomContext {}
 impl Drop for DomContext {
 	fn drop(&mut self) {
+		Store::pre_drop(self);
 		if self.options.remove_on_drop {
 			self.root_el.remove();
 		}
@@ -121,9 +122,6 @@ impl CtxHandle {
 	}
 	pub fn borrow_mut(&self) -> RefMut<'_, DomContext> {
 		self.ctx.borrow_mut()
-	}
-	pub unsafe fn forget(self) {
-		std::mem::forget(self);
 	}
 }
 impl Drop for CtxHandle {

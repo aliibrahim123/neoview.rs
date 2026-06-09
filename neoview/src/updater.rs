@@ -22,7 +22,7 @@ impl<Ctx> Debug for Effect<Ctx> {
 
 #[derive(Debug)]
 pub struct Updater<Ctx> {
-	effects: SlotMap<ItemId, Effect<Ctx>>,
+	pub effects: SlotMap<ItemId, Effect<Ctx>>,
 	read_deps: FxHashMap<ItemId, SmallVec<[ItemId; 2]>>,
 
 	pub is_updating: bool,
@@ -76,6 +76,10 @@ impl<Ctx: Context> Updater<Ctx> {
 	}
 
 	pub fn update(ctx: &mut Ctx) {
+		let updater = &ctx.store().updater;
+		if updater.is_updating {
+			return;
+		}
 		ctx.store().updater.is_updating = true;
 		while !ctx.store().updater.dirty_props.is_empty() {
 			let updater = &mut ctx.store().updater;

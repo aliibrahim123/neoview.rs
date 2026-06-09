@@ -3,7 +3,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use neoview::{ScopedStoreProv, SlabId, StoreProv};
+use neoview::{ScopedStoreProv, SlabId, Store, StoreProv};
 use slotmap::new_key_type;
 use web_sys::{Element, Event};
 
@@ -91,6 +91,15 @@ impl<'ctx> RemovableChunk<'ctx> {
 		let slab = ctx.store().create_slab();
 		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
+	pub fn export(self) -> impl Applicable {
+		let (el, remover) = self.build();
+		move |build: &mut ChunkBuild| {
+			build.build_codes.node(el.into());
+			if let Some(slab) = build.slab {
+				build.store().add_cleaner_in(slab, move |ctx| remover.remove(ctx)).unwrap()
+			}
+		}
+	}
 	pub fn build(self) -> (Element, ChunkRemover) {
 		let id = self.0.id;
 		let slab = self.0.slab.unwrap();
@@ -117,13 +126,13 @@ pub struct ChunkRemover {
 }
 impl Drop for ChunkRemover {
 	fn drop(&mut self) {
-		panic!("a chunk is dropped without being removed")
+		panic!("dropped without calling `ChunkRemover::remove`")
 	}
 }
 impl ChunkRemover {
 	pub fn remove(self, ctx: &mut DomContext) {
+		Store::remove_slab(ctx, self.slab).unwrap();
 		ctx.chunks.remove(self.id);
-		ctx.store().remove_slab(self.slab).unwrap();
 		self.el.remove();
 		std::mem::forget(self);
 	}

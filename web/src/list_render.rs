@@ -1,4 +1,10 @@
-use std::{borrow::Cow, collections::HashMap, hash::Hash};
+use std::{
+	borrow::Cow,
+	cell::{RefCell, RefMut},
+	collections::HashMap,
+	hash::Hash,
+	rc::Rc,
+};
 
 use neoview::{PropId, ScopedStoreProv, Store, StoreProv};
 use rustc_hash::FxBuildHasher;
@@ -45,6 +51,9 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 		old_items.push(Some(item))
 	}
 
+	let old_items = Rc::new(RefCell::new(old_items));
+	let old_items_clone = old_items.clone();
+
 	let slab = build.slab();
 	build.ref_el(move |ctx, parent| {
 		let parent = parent.clone();
@@ -54,7 +63,7 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 			let mut new_items = (0..list.len()).map(|_| None).collect();
 			let mut differ = Differ {
 				ctx,
-				old_items: &mut old_items,
+				old_items: old_items.borrow_mut(),
 				parent: &parent,
 				new_items: &mut new_items,
 				item_builder: |ctx, ind| {
@@ -63,9 +72,19 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 				},
 			};
 			diff(&old_keys, &new_keys, &mut differ);
-			(old_items, old_keys) = (new_items, new_keys);
+			drop(differ);
+			(*old_items.borrow_mut(), old_keys) = (new_items, new_keys);
 		};
-		Store::effect_manual_in(ctx, slab, vec![prop.erase_type()], Vec::new(), fun, false).unwrap()
+		Store::effect_manual_in(ctx, slab, vec![prop.erase_type()], Vec::new(), fun, false)
+			.unwrap();
+		if let Some(slab) = slab {
+			let remover = move |ctx: &mut DomContext| {
+				for item in old_items_clone.borrow_mut().drain(..) {
+					item.unwrap().remover.remove(ctx);
+				}
+			};
+			ctx.store().add_cleaner_in(slab, remover).unwrap()
+		}
 	});
 }
 
@@ -89,7 +108,7 @@ fn build_item<T>(
 struct Differ<'a, F: FnMut(&mut DomContext, usize) -> Item> {
 	ctx: &'a mut DomContext,
 	parent: &'a Element,
-	old_items: &'a mut Vec<Option<Item>>,
+	old_items: RefMut<'a, Vec<Option<Item>>>,
 	new_items: &'a mut Vec<Option<Item>>,
 	item_builder: F,
 }

@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, marker::PhantomData, ops::DerefMut, ptr};
+use std::{any::Any, cell::RefCell, fmt::Debug, ops::DerefMut, ptr};
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
@@ -10,35 +10,70 @@ use crate::{
 	updater::{Updater, start_track_panicing},
 };
 
-#[derive(Debug, Default)]
-pub struct SlabData {
+/// stores items owned by a slab
+pub struct SlabData<Ctx> {
 	pub props: Vec<ItemId>,
 	pub effects: Vec<ItemId>,
+	pub cleaner: Vec<Box<dyn FnOnce(&mut Ctx)>>,
+}
+impl<Ctx> Default for SlabData<Ctx> {
+	fn default() -> Self {
+		Self { props: Vec::new(), effects: Vec::new(), cleaner: Vec::new() }
+	}
+}
+impl<Ctx> Debug for SlabData<Ctx> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("SlabData")
+			.field("props", &self.props)
+			.field("effects", &self.effects)
+			.finish()
+	}
 }
 
+/// the result of a tracking operation.
+///
+/// produced by when the tracking operation is ended with [`Store::end_track`].
+///
+/// # example
+/// ```
+/// let a = store.prop(1);
+/// let b = store.prop(2);
+/// store.start_track();
+/// store.set(b, store.get(a) + 2);
+/// let result = store.end_track();
+/// assert_eq!(result.read, [a.erase_type()]);
+/// assert_eq!(result.written, [b.erase_type()]);
+/// ```
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
 pub struct TrackResult {
+	/// the properties read.
 	pub read: Vec<PropId<()>>,
+	/// the properties written to.
 	pub written: Vec<PropId<()>>,
 }
 impl TrackResult {
+	/// destruct the `TrackResult` into a `(read, written)` pair
 	pub(crate) fn destruct(self) -> (Vec<PropId<()>>, Vec<PropId<()>>) {
 		(self.read, self.written)
 	}
 }
 
-#[derive(Debug)]
 pub struct Store<Ctx> {
 	pub(crate) props: SlotMap<ItemId, Box<dyn Any>>,
 
-	pub(crate) slabs: FxHashMap<SlabId, SlabData>,
+	pub(crate) slabs: FxHashMap<SlabId, SlabData<Ctx>>,
+	/// the `SlabId` of the next slab to be added
 	next_slab: SlabId,
+	/// slabs removed during an update to be deleated at the end of that update
 	slabs_to_remove: Vec<SlabId>,
 
 	pub(crate) updater: Updater<Ctx>,
 
+	global_cleaners: Vec<Box<dyn FnOnce(&mut Ctx)>>,
+	is_dropped: bool,
+
+	// `RefCell` to not make `read` take mutable reference
 	tracking: RefCell<Option<TrackResult>>,
-	_marker: PhantomData<Ctx>,
 }
 impl<Ctx: Context> Default for Store<Ctx> {
 	fn default() -> Self {
@@ -48,9 +83,22 @@ impl<Ctx: Context> Default for Store<Ctx> {
 			next_slab: SlabId(0),
 			slabs_to_remove: Vec::new(),
 			updater: Updater::default(),
+			global_cleaners: Vec::new(),
+			is_dropped: false,
 			tracking: RefCell::new(None),
-			_marker: PhantomData,
 		}
+	}
+}
+impl<Ctx> Debug for Store<Ctx> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Store")
+			.field("props", &self.props)
+			.field("slabs", &self.slabs)
+			.field("slabs_to_remove", &self.slabs_to_remove)
+			.field("effects", &self.updater.effects)
+			.field("tarcking", &self.tracking)
+			.field("is_dropped", &self.is_dropped)
+			.finish()
 	}
 }
 impl<Ctx> PartialEq for Store<Ctx> {
@@ -66,24 +114,52 @@ impl<Ctx: Context> Store<Ctx> {
 		self.next_slab = SlabId(id.0 + 1);
 		id
 	}
-	pub fn remove_slab(&mut self, id: SlabId) -> Result<(), Error> {
-		if !self.slabs.contains_key(&id) || self.slabs_to_remove.contains(&id) {
+	fn slab(&mut self, slab: SlabId) -> &mut SlabData<Ctx> {
+		self.slabs.get_mut(&slab).unwrap()
+	}
+	pub fn has_slab(&self, slab: SlabId) -> bool {
+		self.slabs.contains_key(&slab) && !self.slabs_to_remove.contains(&slab)
+	}
+	pub fn remove_slab(ctx: &mut Ctx, id: SlabId) -> Result<(), Error> {
+		let store = ctx.store();
+		if !store.has_slab(id) {
 			return Err(Error::Removed);
 		}
 
-		if self.updater.is_updating {
-			self.slabs_to_remove.push(id);
+		if store.updater.is_updating {
+			store.slabs_to_remove.push(id);
 		} else {
-			self._remove_slab(id);
+			Store::_remove_slab(ctx, id);
 		}
 		Ok(())
 	}
-	fn _remove_slab(&mut self, id: SlabId) {
-		let slab = &self.slabs.remove(&id).unwrap();
-		for id in &slab.props {
-			self.props.remove(*id);
+	fn _remove_slab(ctx: &mut Ctx, id: SlabId) {
+		while let Some(cleaner) = ctx.store().slab(id).cleaner.pop() {
+			cleaner(ctx)
 		}
-		self.updater.remove_items(&slab.effects, &slab.props);
+		let store = ctx.store();
+		let slab = &store.slabs.remove(&id).unwrap();
+		for id in &slab.props {
+			store.props.remove(*id);
+		}
+		store.updater.remove_items(&slab.effects, &slab.props);
+	}
+
+	pub fn add_global_cleaner(&mut self, fun: impl FnOnce(&mut Ctx) + 'static) {
+		self.global_cleaners.push(Box::new(fun))
+	}
+	pub fn add_cleaner_in(
+		&mut self, slab: Option<SlabId>, fun: impl FnOnce(&mut Ctx) + 'static,
+	) -> Result<(), Error> {
+		let Some(slab) = slab else {
+			self.add_global_cleaner(fun);
+			return Ok(());
+		};
+		if !self.has_slab(slab) {
+			return Err(Error::Removed);
+		}
+		self.slab(slab).cleaner.push(Box::new(fun));
+		Ok(())
 	}
 
 	pub fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
@@ -96,11 +172,11 @@ impl<Ctx: Context> Store<Ctx> {
 		let Some(slab) = slab else {
 			return Ok(self.prop(value));
 		};
-		if !self.slabs.contains_key(&slab) {
+		if !self.has_slab(slab) {
 			return Err(Error::Removed);
 		}
 		let id = self.prop(value);
-		self.slabs.get_mut(&slab).unwrap().props.push(id.0);
+		self.slab(slab).props.push(id.0);
 		Ok(id)
 	}
 
@@ -181,11 +257,11 @@ impl<Ctx: Context> Store<Ctx> {
 		let Some(slab) = slab else {
 			return Ok(Store::effect(ctx, fun));
 		};
-		if !ctx.store().slabs.contains_key(&slab) {
+		if !ctx.store().has_slab(slab) {
 			return Err(Error::Removed);
 		}
 		let id = Updater::add_effect(ctx, fun, None, true);
-		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
+		ctx.store().slab(slab).effects.push(id);
 		Ok(())
 	}
 	pub fn effect_manual_in(
@@ -195,11 +271,11 @@ impl<Ctx: Context> Store<Ctx> {
 		let Some(slab) = slab else {
 			return Ok(Store::effect_manual(ctx, read, write, fun, init_run));
 		};
-		if !ctx.store().slabs.contains_key(&slab) {
+		if !ctx.store().has_slab(slab) {
 			return Err(Error::Removed);
 		}
 		let id = Updater::add_effect(ctx, fun, Some((read, write)), init_run);
-		ctx.store().slabs.get_mut(&slab).unwrap().effects.push(id);
+		ctx.store().slab(slab).effects.push(id);
 		Ok(())
 	}
 
@@ -237,11 +313,11 @@ impl<Ctx: Context> Store<Ctx> {
 		let Some(slab) = slab else {
 			return Ok(Store::computed(ctx, fun));
 		};
-		if !ctx.store().slabs.contains_key(&slab) {
+		if !ctx.store().has_slab(slab) {
 			return Err(Error::Removed);
 		}
 		let (id, effect) = Self::computed_manual(ctx, fun);
-		let slab = ctx.store().slabs.get_mut(&slab).unwrap();
+		let slab = ctx.store().slab(slab);
 		slab.effects.push(effect);
 		slab.props.push(id.0);
 		Ok(id)
@@ -293,11 +369,29 @@ impl<Ctx: Context> Store<Ctx> {
 	pub fn flush_updates(ctx: &mut Ctx) {
 		Updater::update(ctx);
 
-		let store = ctx.store();
-		for ind in 0..store.slabs_to_remove.len() {
-			let slab = store.slabs_to_remove[ind];
-			store._remove_slab(slab);
+		while let Some(slab) = ctx.store().slabs_to_remove.pop() {
+			Store::_remove_slab(ctx, slab);
 		}
-		store.slabs_to_remove.clear();
+	}
+
+	pub fn pre_drop(ctx: &mut Ctx) {
+		let store = ctx.store();
+		if store.is_dropped {
+			panic!("calling `Store::pre_drop` twice")
+		}
+		store.is_dropped = true;
+		while let Some(&slab) = ctx.store().slabs.keys().next() {
+			Store::remove_slab(ctx, slab).unwrap()
+		}
+		while let Some(cleaner) = ctx.store().global_cleaners.pop() {
+			cleaner(ctx)
+		}
+	}
+}
+impl<Ctx> Drop for Store<Ctx> {
+	fn drop(&mut self) {
+		if !self.is_dropped {
+			panic!("dropped without calling `Store::pre_drop`")
+		}
 	}
 }

@@ -7,18 +7,39 @@ use std::{
 use slotmap::{Key, new_key_type};
 
 new_key_type! {
+	/// an id of an item used inside the reactivity system
 	pub struct ItemId;
 }
 
+/// a typeaware id of a reactive property.
+///
+/// the `PropId` is a [`Copy`]able id used in accessing a specific property.
+///
+/// it is unique for the lifetime of the [`Store`](crate::Store), but not between different `Stores`.
+///
+/// it is created by [`Store::prop`](crate::Store::prop)
+///
+/// # example
+/// ```
+///	let count = store.prop(0);
+/// assert_eq!(store.get(count), 0);
+/// ```
 #[repr(transparent)]
 pub struct PropId<T: 'static>(pub(crate) ItemId, PhantomData<T>);
 impl<T> PropId<T> {
-	pub fn new(id: ItemId) -> Self {
+	/// create a new `PropId` from a [`ItemId`].
+	pub(crate) fn new(id: ItemId) -> Self {
 		Self(id, PhantomData)
 	}
+	/// return the value of the `PropId`.
+	///
+	/// the value will be unique like the `PropId`, however it is not stable between versions.
 	pub fn value(&self) -> u64 {
 		self.0.data().as_ffi()
 	}
+	/// erase the type associated with the `TypeId`.
+	///
+	/// useful in grouping `PropId`s of different types like in [`Store::effect`](crate::Store::effect).
 	pub fn erase_type(&self) -> PropId<()> {
 		PropId(self.0, PhantomData)
 	}
@@ -61,6 +82,17 @@ impl<T> Ord for PropId<T> {
 	}
 }
 
+/// an id of a slab.
+///
+/// the `SlabId` is a [`Copy`]able id for a specific [`Store`](crate::Store) slab.
+///
+/// created by [`Store::create_slab`](crate::Store::create_slab)
+///
+/// # example
+/// ```
+/// let slab = store.create_slab();
+/// let count = store.prop_in(slab, 0);
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SlabId(pub(crate) u64);
 impl SlabId {
