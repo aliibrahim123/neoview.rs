@@ -504,56 +504,45 @@ pub enum EffectDeps {
 /// they are functions that depends on specific properties, when the target properties change they rerun, they are passed the owner [`Context`], and must be of `'static` lifetime.
 ///
 /// to know the effects run order, read the [updating section](#updating).
-///
-/// effects are defined through [`effect`](Store::effect) and [`effect_ext`](Store::effect_ext) which are redirected by the family of [`StoreProv`](crate::StoreProv)iders.
 impl<Ctx: Context> Store<Ctx> {
-	// all take the context since they may rerun on init.
-	/// define a global effect.
+	/// define an effect.
 	///
-	/// `effect` register the `fun`ction as an effect in the global scope, with its dependencies [tracked](#tracking).
-	///
-	/// it takes the context and call the `fun` on definition to identify the dependencies.
-	///
-	/// it is a shorthand for [`effect_ext(ctx, None, EffectDeps::Tracked, fun)`](Store::effect_ext).
-	///
-	/// # example
-	/// ```
-	/// let count = store.prop(1);
-	/// Store::effect(ctx, move |ctx| println!("count: {}", ctx.get(count))); // => count: 1
-	///
-	/// store.set(count, 2);
-	/// Store::flush_updates(ctx); // => count: 2
-	/// ```
-	pub fn effect(ctx: &mut Ctx, fun: impl FnMut(&mut Ctx) + 'static) {
-		Updater::add_effect(ctx, fun, None, true);
-	}
-
-	/// define an effect, expert mode.
-	///
-	/// `effect_ext` register the `fun`ction as an effect in a specific scope (global if `slab` is [`None`]), with the dependencies specified.
+	/// `effect` register the `fun`ction as an effect in a specific scope (global if `slab` is [`None`]), with the dependencies specified.
 	///
 	/// the dependencies can be implicitly identified through [tracking](#tracking) if `deps` is [`EffectDeps::Tracked`], otherwise they are manually specifed through [`EffectDeps::Manual`].
 	///
 	/// it takes the context and call the `fun` on definition to identify the dependencies if needed.
 	///
-	/// it returns [`Error::Removed`] if the target `slab` is removed.
+	/// it returns [`Error::Removed`] if the `slab` is removed.
+	///
+	/// this method is redirected by every [`ScopedStoreProv`](crate::ScopedStoreProv)ider in a more egornomic format.
 	///
 	/// # example
 	/// ```
 	/// use EffectDeps::*;
-	/// let count = store.prop_in(Some(slab), 1);
-	/// let deps = Manual { read: vec![count.erase_type()], write: Vec::new(), init_run: true };
+	/// let count = store.prop(1);
+	/// let doubled = store.prop(1);
 	///
-	/// Store::effect_ext(ctx, None, Tracked, move |ctx| println!("count: {}", ctx.get(count))); // => count: 1
-	/// let deps = Manual { read: vec![count.erase_type()], write: Vec::new(), init_run: true };
-	/// Store::effect_ext(ctx, None, deps, move |ctx| println!("count: {}", ctx.get(count))); // => count: 1
-	/// let deps = Manual { read: vec![count.erase_type()], write: Vec::new(), init_run: false };
-	/// Store::effect_ext(ctx, Some(slab), deps, move |ctx| println!("count: {}", ctx.get(count)));
+	/// Store::effect(ctx, None, Tracked, move |ctx| println!("doubled: {}", ctx.get(doubled))); // => doubled: 2
+	/// // noop afterward
+	/// Store::effect(ctx, None, Tracked, move |ctx| println!("doubled: {}", ctx.peek(doubled))); // => doubled: 2
+	/// // same as the first
+	/// let deps = Manual { read: vec![doubled.erase_type()], write: Vec::new(), init_run: true };
+	/// Store::effect(ctx, None, deps, move |ctx| println!("doubled: {}", ctx.get(doubled))); // => doubled: 2
+	/// // in slab
+	/// let deps = Manual { read: vec![doubled.erase_type()], write: Vec::new(), init_run: false };
+	/// Store::effect(ctx, Some(slab), deps, move |ctx| println!("doubled: {}", ctx.get(doubled))); // => doubled: 2
+	///
+	/// Store::effect(ctx, None, Tracked, move |ctx| ctx.write(doubled, ctx.get(count) * 2));
 	///
 	/// store.write(count, 2);
-	/// Store::flush_updates(ctx); // => count: 2 x3
+	/// Store::flush_updates(ctx); // => doubled: 4 x3
+	///
+	/// Store::remove_slab(ctx, slab);
+	/// store.write(count, 3);
+	/// Store::flush_updates(ctx); // => doubled: 6 x2
 	/// ```
-	pub fn effect_ext(
+	pub fn effect(
 		ctx: &mut Ctx, slab: Option<SlabId>, dep: EffectDeps, fun: impl FnMut(&mut Ctx) + 'static,
 	) -> Result<(), Error> {
 		if let Some(slab) = slab
@@ -575,7 +564,7 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 
-	/// the core fun that create computed properties
+	/// the core fun that create computed properties, it returns (prop, effect_id)
 	pub(crate) fn computed_core<T: 'static>(
 		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> (PropId<T>, ItemId) {
@@ -599,53 +588,120 @@ impl<Ctx: Context> Store<Ctx> {
 		(id, effect)
 	}
 
+	/// create a computed property.
+	///
+	/// a computed property is a reactive property that is derived from a `fun`ction taking the [`Context`] and get reevaluated when its dependencies change.
+	///
+	/// `computed` defines the property in a specific scope (global if `slab` is [`None`]), and return the property [`PropId`].
+	///
+	/// it takes the context and call `fun` on definition to set the property initial value, and to identifies the dependencies using [tracking](#tracking)
+	///
+	/// it returns [`Error::Removed`] if the `slab` is removed.
+	///
+	/// this method is redirected by every [`ScopedStoreProv`](crate::ScopedStoreProv)ider in a more egornomic format.
+	///
+	/// # example
+	/// ```
+	/// let count = store.prop(1);
+	/// let doubled = Store::computed(ctx, Some(slab), move |ctx| ctx.get(count) * 2);
+	/// assert_eq!(store.get(doubled), 2);
+	///
+	/// store.write(count, 2);
+	/// Store::flush_updates(ctx);
+	/// assert_eq!(store.get(doubled), 4);
+	///
+	/// Store::remove_slab(ctx, slab);
+	/// assert!(!store.contains(doubled));
+	/// ```
 	pub fn computed<T: 'static>(
-		ctx: &mut Ctx, fun: impl FnMut(&mut Ctx) -> T + 'static,
-	) -> PropId<T> {
-		Self::computed_core(ctx, fun).0
-	}
-	pub fn computed_in<T: 'static>(
 		ctx: &mut Ctx, slab: Option<SlabId>, fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> Result<PropId<T>, Error> {
-		let Some(slab) = slab else {
-			return Ok(Store::computed(ctx, fun));
-		};
-		if !ctx.store().has_slab(slab) {
+		if let Some(slab) = slab
+			&& !ctx.store().has_slab(slab)
+		{
 			return Err(Error::Removed);
 		}
 		let (id, effect) = Self::computed_core(ctx, fun);
-		let slab = ctx.store().slab(slab);
-		slab.effects.push(effect);
-		slab.props.push(id.0);
+
+		if let Some(slab) = slab {
+			let slab = ctx.store().slab(slab);
+			slab.effects.push(effect);
+			slab.props.push(id.0);
+		}
 		Ok(id)
 	}
 }
 
 /// <h2 id=slab-managment>Slab Managment</h2>
-impl<Ctx: Context> Store<Ctx> {}
-
-/// <h2 id=updating>Updating</h2>
-impl<Ctx: Context> Store<Ctx> {}
-
-/// <h2 id=tracking>Tracking</h2>
-impl<Ctx: Context> Store<Ctx> {}
-
-/// <h2 id=store-managment>Store Managment</h2>
-impl<Ctx: Context> Store<Ctx> {}
-
+///
+/// the `Store` is composed of multiple independent scopes, each scope have its own lifetime shared accross its own items (properties and effects).
+///
+/// the default scope the global scope that spans the entire `Store` lifetime.
+///
+/// the other kinds are slabs that are scopes identified with [`SlabId`] and can be removed when needed.
+///
+/// all effects dependent on properties inside slabs, they themself should be inside the shortest life slab, this because they would run while their dependencies are removed leading to panics.
+///
+/// ## example
+/// ```
+/// let slab = store.create_slab();
+/// let count = store.prop_in(slab, 1);
+///
+/// Store::remove_slab(ctx, slab);
+/// assert!(!store.has_slab(slab));
+/// assert!(!store.contains(count));
+/// ```
 impl<Ctx: Context> Store<Ctx> {
+	/// creates a slab, returning its [`SlabId`].
+	///
+	/// # example
+	/// ```
+	/// let slab = store.create_slab();
+	/// ```
 	pub fn create_slab(&mut self) -> SlabId {
 		let id = self.next_slab;
 		self.slabs.insert(id, SlabData::default());
 		self.next_slab = SlabId(id.0 + 1);
 		id
 	}
+
+	/// return a mutable reference to `SlabData`
 	fn slab(&mut self, slab: SlabId) -> &mut SlabData<Ctx> {
 		self.slabs.get_mut(&slab).unwrap()
 	}
+
+	/// check whether a slab is inside the `Store`.
+	///
+	/// in some [circumstances](#remove-slab-note), a slab may be marked removed but its items are not.
+	///
+	/// # example
+	/// ```
+	/// let slab = store.create_slab();
+	/// assert!(store.has_slab(slab));
+	///
+	/// Store::remove_slab(ctx, slab);
+	/// assert!(!store.has_slab(slab));
+	/// ```
 	pub fn has_slab(&self, slab: SlabId) -> bool {
 		self.slabs.contains_key(&slab) && !self.slabs_to_remove.contains(&slab)
 	}
+
+	/// remove the given slab.
+	///
+	/// this methods will drop all the slab items and return [`Error::Removed`] if the given `slab` was previously removed.
+	///
+	/// <h4 id=remove-slab-note>note</h4>
+	///
+	/// during updating inside effects, removed slabs will not be dropped instantly, instead they will be marked removed and will be removed when the updating end.
+	///
+	/// # example
+	/// ```
+	/// let slab = store.create_slab();
+	/// let count = store.prop_in(slab, 1);
+	///
+	/// Store::remove_slab(ctx, slab);
+	/// assert!(!store.has_slab(slab));
+	/// ```
 	pub fn remove_slab(ctx: &mut Ctx, id: SlabId) -> Result<(), Error> {
 		let store = ctx.store();
 		if !store.has_slab(id) {
@@ -653,16 +709,19 @@ impl<Ctx: Context> Store<Ctx> {
 		}
 
 		if store.updater.is_updating {
+			// since we would need to clean the current effect queue, and it is ineffecient and rarely necessary.
 			store.slabs_to_remove.push(id);
 		} else {
-			Store::_remove_slab(ctx, id);
+			Store::drop_slab(ctx, id);
 		}
 		Ok(())
 	}
-	fn _remove_slab(ctx: &mut Ctx, id: SlabId) {
+	/// remove the slab for real
+	fn drop_slab(ctx: &mut Ctx, id: SlabId) {
 		while let Some(cleaner) = ctx.store().slab(id).cleaner.pop() {
 			cleaner(ctx)
 		}
+
 		let store = ctx.store();
 		let slab = &store.slabs.remove(&id).unwrap();
 		for id in &slab.props {
@@ -670,7 +729,121 @@ impl<Ctx: Context> Store<Ctx> {
 		}
 		store.updater.remove_items(&slab.effects, &slab.props);
 	}
+}
 
+/// <h2 id=updating>Updating</h2>
+impl<Ctx: Context> Store<Ctx> {}
+
+/// <h2 id=tracking>Tracking</h2>
+///
+/// tracking is a mechanism that allow to identify the properties used in a chunk of normal code without any extra syntax.
+///
+/// it starts with [`start_track`](Store::start_track), then every call to a [property access method](#property-access) record the target property as read or write, and at the end a call to [`end_track`](Store::end_track) retuns the recorded properties in a [`TrackResult`].
+///
+/// # example
+/// ```
+/// let a = store.prop(1);
+/// let b = store.prop(2);
+/// let c = store.prop(3);
+/// let d = store.prop(4);
+/// store.start_track();
+///
+/// store.read(a);
+/// store.peek(b);
+/// store.write(c, 5);
+/// store.write(d, 6);
+/// store.read(a);
+///
+/// let TrackResult { read, written } = store.end_track().unwrap();
+/// assert_eq!(read, [a.erase_type()]);
+/// assert_eq!(written, [c.erase_type(), d.erase_type()]);
+/// ```
+impl<Ctx: Context> Store<Ctx> {
+	/// check whether tracking is activated.
+	///
+	/// # example
+	/// ```
+	/// assert!(!store.is_tracking());
+	/// store.start_track();
+	/// assert!(store.is_tracking());
+	/// store.end_track();
+	/// assert!(!store.is_tracking());
+	/// ```
+	pub fn is_tracking(&self) -> bool {
+		self.tracking.borrow().is_some()
+	}
+
+	/// activate tracking.
+	///
+	/// returns [`Error::Tracking`] if tracking was activated before.
+	pub fn start_track(&self) -> Result<(), Error> {
+		if self.is_tracking() {
+			return Err(Error::Tracking);
+		}
+		self.tracking.replace(Some(TrackResult::default()));
+		Ok(())
+	}
+
+	/// stop tracking and return the [`TrackResult`].
+	///
+	/// returns [`Error::NotTracking`] if tracking was not activated before.
+	pub fn end_track(&self) -> Result<TrackResult, Error> {
+		let mut result = self.tracking.take().ok_or(Error::NotTracking)?;
+
+		// deduping at the end is faster than on every call
+		result.read.sort_unstable();
+		result.read.dedup();
+		result.written.sort_unstable();
+		result.written.dedup();
+
+		Ok(result)
+	}
+
+	/// record a property as read while tracking.
+	///
+	/// it is noop while not tracking.
+	///
+	/// # example
+	/// ```
+	/// let a = store.prop(1);
+	/// store.start_track();
+	/// store.track_read(a);
+	/// assert_eq!(store.end_track().unwrap().read, [a.erase_type()]);
+	/// ```
+	pub fn track_read<T: 'static>(&self, id: PropId<T>) {
+		if let Some(tracking) = self.tracking.borrow_mut().deref_mut() {
+			tracking.read.push(id.erase_type());
+		}
+	}
+
+	/// record a property as written while tracking.
+	// like that because in `get_mut` requires partial borrow
+	fn _track_write<T: 'static>(tracking: &RefCell<Option<TrackResult>>, id: PropId<T>) {
+		if let Some(tracking) = tracking.borrow_mut().deref_mut() {
+			tracking.written.push(id.erase_type());
+		}
+	}
+
+	/// record a property as written while tracking.
+	///
+	/// it is noop while not tracking.
+	///
+	/// # example
+	/// ```
+	/// let a = store.prop(1);
+	/// store.start_track();
+	/// store.track_write(a);
+	/// assert_eq!(store.end_track().unwrap().written, [a.erase_type()]);
+	/// ```
+	pub fn track_write<T: 'static>(&self, id: PropId<T>) {
+		Self::_track_write(&self.tracking, id);
+	}
+}
+
+/// <h2 id=store-managment>Store Managment</h2>
+impl<Ctx: Context> Store<Ctx> {}
+
+impl<Ctx: Context> Store<Ctx> {
 	pub fn add_global_cleaner(&mut self, fun: impl FnOnce(&mut Ctx) + 'static) {
 		self.global_cleaners.push(Box::new(fun))
 	}
@@ -688,40 +861,6 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 
-	pub fn is_tracking(&self) -> bool {
-		self.tracking.borrow().is_some()
-	}
-	pub fn start_track(&self) -> Result<(), Error> {
-		if self.is_tracking() {
-			return Err(Error::Tracking);
-		}
-		self.tracking.replace(Some(TrackResult::default()));
-		Ok(())
-	}
-	pub fn end_track(&self) -> Result<TrackResult, Error> {
-		let mut result = self.tracking.take().ok_or(Error::NotTracking)?;
-
-		result.read.sort_unstable();
-		result.read.dedup();
-		result.written.sort_unstable();
-		result.written.dedup();
-
-		Ok(result)
-	}
-	pub fn track_read<T: 'static>(&self, id: PropId<T>) {
-		if let Some(tracking) = self.tracking.borrow_mut().deref_mut() {
-			tracking.read.push(id.erase_type());
-		}
-	}
-	fn _track_write<T: 'static>(tracking: &RefCell<Option<TrackResult>>, id: PropId<T>) {
-		if let Some(tracking) = tracking.borrow_mut().deref_mut() {
-			tracking.written.push(id.erase_type());
-		}
-	}
-	pub fn track_write<T: 'static>(&self, id: PropId<T>) {
-		Self::_track_write(&self.tracking, id);
-	}
-
 	pub fn is_updating(&self) -> bool {
 		self.updater.is_updating
 	}
@@ -735,7 +874,7 @@ impl<Ctx: Context> Store<Ctx> {
 		Updater::update(ctx);
 
 		while let Some(slab) = ctx.store().slabs_to_remove.pop() {
-			Store::_remove_slab(ctx, slab);
+			Store::drop_slab(ctx, slab);
 		}
 	}
 

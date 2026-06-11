@@ -84,7 +84,7 @@ impl<T> Ord for PropId<T> {
 
 /// an id of a slab.
 ///
-/// the `SlabId` is a [`Copy`]able id for a specific [`Store`](crate::Store) slab.
+/// the `SlabId` is a [`Copy`]able id for a specific [`Store`](crate::Store) [slab](crate::Store#slab-managment).
 ///
 /// created by [`Store::create_slab`](crate::Store::create_slab)
 ///

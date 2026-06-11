@@ -1,4 +1,4 @@
-use crate::{Error, PropId, SlabId, Store, store::EffectDeps};
+use crate::{PropId, SlabId, Store, store::EffectDeps};
 
 pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
 
@@ -37,15 +37,15 @@ pub trait GlobalStoreProv: StoreProv {
 		self.store().prop(value)
 	}
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
-		Store::effect(self.ctx(), fun);
+		Store::effect(self.ctx(), None, EffectDeps::Tracked, fun).unwrap();
 	}
 	fn effect_ext(&mut self, deps: EffectDeps, fun: impl FnMut(&mut Self::Ctx) + 'static) {
-		Store::effect_ext(self.ctx(), None, deps, fun).unwrap();
+		Store::effect(self.ctx(), None, deps, fun).unwrap();
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
 	) -> PropId<T> {
-		Store::computed(self.ctx(), fun)
+		Store::computed(self.ctx(), None, fun).unwrap()
 	}
 }
 
@@ -57,17 +57,17 @@ pub trait LocalStoreProv: StoreProv {
 	}
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_ext(self.ctx(), Some(slab), EffectDeps::Tracked, fun).unwrap();
+		Store::effect(self.ctx(), Some(slab), EffectDeps::Tracked, fun).unwrap();
 	}
 	fn effect_ext(&mut self, deps: EffectDeps, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_ext(self.ctx(), Some(slab), deps, fun).unwrap();
+		Store::effect(self.ctx(), Some(slab), deps, fun).unwrap();
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
 	) -> PropId<T> {
 		let slab = self.slab();
-		Store::computed_in(self.ctx(), Some(slab), fun).unwrap()
+		Store::computed(self.ctx(), Some(slab), fun).unwrap()
 	}
 }
 
@@ -79,16 +79,16 @@ pub trait ScopedStoreProv: StoreProv {
 	}
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_ext(self.ctx(), slab, EffectDeps::Tracked, fun).unwrap();
+		Store::effect(self.ctx(), slab, EffectDeps::Tracked, fun).unwrap();
 	}
 	fn effect_ext(&mut self, deps: EffectDeps, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_ext(self.ctx(), slab, deps, fun).unwrap();
+		Store::effect(self.ctx(), slab, deps, fun).unwrap();
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
 	) -> PropId<T> {
 		let slab = self.slab();
-		Store::computed_in(self.ctx(), slab, fun).unwrap()
+		Store::computed(self.ctx(), slab, fun).unwrap()
 	}
 }
