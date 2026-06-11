@@ -1,4 +1,4 @@
-use crate::{Error, PropId, SlabId, Store};
+use crate::{Error, PropId, SlabId, Store, store::EffectDeps};
 
 pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
 
@@ -12,40 +12,20 @@ pub trait StoreProv {
 	fn store_ref(&self) -> &Store<Self::Ctx> {
 		self.ctx_ref().store_ref()
 	}
-	fn try_peek<T: 'static>(&self, id: PropId<T>) -> Option<&T> {
-		self.store_ref().try_peek(id)
-	}
 	fn peek<T: 'static>(&self, id: PropId<T>) -> &T {
 		self.store_ref().peek(id)
-	}
-	fn try_read<T: 'static>(&self, id: PropId<T>) -> Option<&T> {
-		self.store_ref().try_read(id)
 	}
 	fn read<T: 'static>(&self, id: PropId<T>) -> &T {
 		self.store_ref().read(id)
 	}
-	fn try_get<T: 'static + Copy>(&self, id: PropId<T>) -> Option<T> {
-		self.store_ref().try_get(id)
-	}
 	fn get<T: 'static + Copy>(&self, id: PropId<T>) -> T {
 		self.store_ref().get(id)
-	}
-	fn try_read_mut<T: 'static>(&mut self, id: PropId<T>) -> Option<&mut T> {
-		self.store().try_read_mut(id)
 	}
 	fn read_mut<T: 'static>(&mut self, id: PropId<T>) -> &mut T {
 		self.store().read_mut(id)
 	}
-	fn try_write<T: 'static>(&mut self, id: PropId<T>, value: T) -> Result<(), Error> {
-		self.store().try_write(id, value)
-	}
-	fn write<T: 'static>(&mut self, id: PropId<T>, value: T) {
+	fn write<T: 'static>(&mut self, id: PropId<T>, value: T) -> T {
 		self.store().write(id, value)
-	}
-	fn try_update<T: 'static>(
-		&mut self, id: PropId<T>, fun: impl FnOnce(&mut T),
-	) -> Result<(), Error> {
-		self.store().try_update(id, fun)
 	}
 	fn update<T: 'static>(&mut self, id: PropId<T>, fun: impl FnOnce(&mut T)) {
 		self.store().update(id, fun)
@@ -59,11 +39,8 @@ pub trait GlobalStoreProv: StoreProv {
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		Store::effect(self.ctx(), fun);
 	}
-	fn effect_manual(
-		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
-		fun: impl FnMut(&mut Self::Ctx) + 'static,
-	) {
-		Store::effect_manual(self.ctx(), read, write, fun, true);
+	fn effect_ext(&mut self, deps: EffectDeps, fun: impl FnMut(&mut Self::Ctx) + 'static) {
+		Store::effect_ext(self.ctx(), None, deps, fun).unwrap();
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
@@ -80,14 +57,11 @@ pub trait LocalStoreProv: StoreProv {
 	}
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_in(self.ctx(), Some(slab), fun).unwrap();
+		Store::effect_ext(self.ctx(), Some(slab), EffectDeps::Tracked, fun).unwrap();
 	}
-	fn effect_manual(
-		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
-		fun: impl FnMut(&mut Self::Ctx) + 'static,
-	) {
+	fn effect_ext(&mut self, deps: EffectDeps, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_manual_in(self.ctx(), Some(slab), read, write, fun, true).unwrap();
+		Store::effect_ext(self.ctx(), Some(slab), deps, fun).unwrap();
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,
@@ -105,14 +79,11 @@ pub trait ScopedStoreProv: StoreProv {
 	}
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_in(self.ctx(), slab, fun).unwrap();
+		Store::effect_ext(self.ctx(), slab, EffectDeps::Tracked, fun).unwrap();
 	}
-	fn effect_manual(
-		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
-		fun: impl FnMut(&mut Self::Ctx) + 'static,
-	) {
+	fn effect_ext(&mut self, deps: EffectDeps, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
-		Store::effect_manual_in(self.ctx(), slab, read, write, fun, true).unwrap();
+		Store::effect_ext(self.ctx(), slab, deps, fun).unwrap();
 	}
 	fn computed<T: 'static>(
 		&mut self, fun: impl FnMut(&mut Self::Ctx) -> T + 'static,

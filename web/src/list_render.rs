@@ -6,7 +6,7 @@ use std::{
 	rc::Rc,
 };
 
-use neoview::{PropId, ScopedStoreProv, Store, StoreProv};
+use neoview::{EffectDeps::Manual, PropId, ScopedStoreProv, Store, StoreProv};
 use rustc_hash::FxBuildHasher;
 use web_sys::Element;
 
@@ -75,8 +75,8 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 			drop(differ);
 			(*old_items.borrow_mut(), old_keys) = (new_items, new_keys);
 		};
-		Store::effect_manual_in(ctx, slab, vec![prop.erase_type()], Vec::new(), fun, false)
-			.unwrap();
+		let ty = Manual { read: vec![prop.erase_type()], write: Vec::new(), init_run: true };
+		Store::effect_ext(ctx, slab, ty, fun).unwrap();
 		let remover = move |ctx: &mut DomContext| {
 			for item in old_items_clone.borrow_mut().drain(..) {
 				item.unwrap().remover.remove(ctx);

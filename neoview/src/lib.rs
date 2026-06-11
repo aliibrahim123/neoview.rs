@@ -95,7 +95,7 @@ pub use neoview_macro::chunk;
 pub use {
 	context::{Context, GlobalStoreProv, LocalStoreProv, ScopedStoreProv, StoreProv},
 	prop::{PropId, SlabId},
-	store::{Store, TrackResult},
+	store::{EffectDeps, Store, TrackResult},
 };
 
 /// an error raised by the reactivity system.

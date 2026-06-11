@@ -1,7 +1,7 @@
 // sorry trait solver for this madness
 use std::borrow::Cow;
 
-use neoview::{PropId, Store, StoreProv, TrackResult};
+use neoview::{EffectDeps::Manual, PropId, Store, StoreProv, TrackResult};
 use wasm_bindgen::prelude::{JsCast, JsValue};
 use web_sys::{Element, HtmlElement, Node, Text, js_sys::Reflect};
 
@@ -24,7 +24,7 @@ fn add_effect(
 	build: &mut ChunkBuild, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
 	fun: impl FnMut(&mut DomContext) + 'static,
 ) {
-	Store::effect_manual_in(build.ctx, build.slab, read, write, fun, false).unwrap();
+	Store::effect_ext(build.ctx, build.slab, Manual { read, write, init_run: false }, fun).unwrap();
 }
 fn add_effect_with_el(
 	build: &mut ChunkBuild, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
@@ -35,7 +35,7 @@ fn add_effect_with_el(
 	let fun = move |ctx: &mut DomContext| {
 		fun(ctx, chunk, el as usize);
 	};
-	Store::effect_manual_in(build.ctx, build.slab, read, write, fun, false).unwrap();
+	Store::effect_ext(build.ctx, build.slab, Manual { read, write, init_run: false }, fun).unwrap();
 }
 
 trait BasicAttrValue {
