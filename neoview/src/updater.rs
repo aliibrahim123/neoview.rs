@@ -13,10 +13,7 @@ pub struct Effect<Ctx> {
 }
 impl<Ctx> Debug for Effect<Ctx> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("Effect")
-			.field("read", &self.read)
-			.field("write", &self.write)
-			.finish()
+		f.debug_struct("Effect").field("read", &self.read).field("write", &self.write).finish()
 	}
 }
 
@@ -77,9 +74,6 @@ impl<Ctx: Context> Updater<Ctx> {
 
 	pub fn update(ctx: &mut Ctx) {
 		let updater = &ctx.store().updater;
-		if updater.is_updating {
-			return;
-		}
 		ctx.store().updater.is_updating = true;
 		while !ctx.store().updater.dirty_props.is_empty() {
 			let updater = &mut ctx.store().updater;

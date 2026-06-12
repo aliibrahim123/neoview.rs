@@ -732,7 +732,129 @@ impl<Ctx: Context> Store<Ctx> {
 }
 
 /// <h2 id=updating>Updating</h2>
-impl<Ctx: Context> Store<Ctx> {}
+///
+/// the `Store` use fine grained reactivity to update only the required parts and runs the minimal amount of effects.
+///
+/// mutates to properties through [`write`](Store::write), [`update`](Store::update) and [`read_mut`](Store::read_mut) marks the properties dirty and queue them, then a call to [`flush_updates`](Store::flush_updates) takes the owner [`Context`] and pass it to the effects.
+///
+/// effects are gathered and executed in undefined order, however it is graduated that each effects get executed once if it is effected, and after all of its read dependencies being finilized after the last effect writing to them being executed.
+///
+/// effects can effect other effects through their write dependencies, and the effect graph can be any graph that is not cyclic.
+///
+/// # example
+/// ```
+/// let a = store.prop(1);
+/// let b = store.prop(1);
+/// let c = store.prop(1);
+/// let d = store.prop(1);
+///
+/// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
+/// 	ctx.write(b, ctx.get(a));
+/// });
+/// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
+/// 	ctx.write(c, ctx.get(b) + 1);
+/// });
+/// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
+/// 	ctx.write(c, ctx.get(b) + 2);
+/// });
+/// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
+/// 	ctx.write(d, ctx.get(c) + ctx.get(a));
+/// });
+///
+/// store.write(a, 2);
+/// Store::flush_updates(ctx); // all run exacly once
+/// assert!(matches!(store.get(d), 5 | 6));
+/// ```
+///
+/// <h3 id=conditional-updates> conditional updates</h3>
+///
+/// the effects graph is static, the same effects will be run even if the written value is the same, the specified write dependencies didnt get mutated and even if other non specified properties are mutated.
+///
+/// for conditional mutation inside effects use [force_update](Store::force_update) that queue the given properties to the end of the current effect batch, where the `Store` will regather and run the required effects, repeating this till no more dirty property.
+///
+/// this can cause effects being run more than once in rare cases, and endless loops in extreme ones.
+///
+/// # example
+/// ```
+///	let a = store.prop(1);
+/// let b = store.prop(1);
+///
+/// let mut old = store.get(a);
+/// let deps = EffectDeps::Manual { read: Vec::new(), written: Vec::new(), init_run: true };
+/// Store::effect(ctx, None, deps, move |ctx| {
+/// 	if ctx.peek(a) != old {
+/// 		old = ctx.get(a);
+/// 		ctx.write(b, old + 1);
+/// 		ctx.store().force_update(b);
+/// 	}
+/// });
+/// ```
+impl<Ctx: Context> Store<Ctx> {
+	/// check whether the `Store` is executing effects.
+	///
+	/// # example
+	/// ```
+	/// assert!(!store.is_updating());
+	/// Store::effect(ctx, None, EffectDeps::Tracked, |ctx| assert!(ctx.store().is_updating()));
+	/// ```
+	pub fn is_updating(&self) -> bool {
+		self.updater.is_updating
+	}
+
+	/// mark a property as dirty to be updated.
+	///
+	/// this method mark the the property as dirty recardless wether the `Store` is in updating or not.
+	///
+	/// this method is used in [conditional updates](#conditional-updates).
+	///
+	/// # example
+	/// ```
+	///	let a = store.prop(1);
+	/// let b = store.prop(1);
+	///
+	/// let mut old = store.get(a);
+	/// let deps = EffectDeps::Manual { read: Vec::new(), written: Vec::new(), init_run: true };
+	/// Store::effect(ctx, None, deps, move |ctx| {
+	/// 	if ctx.peek(a) != old {
+	/// 		old = ctx.get(a);
+	/// 		ctx.write(b, old + 1);
+	/// 		ctx.store().force_update(b);
+	/// 	}
+	/// });
+	/// ```
+	pub fn force_update<T: 'static>(&mut self, id: PropId<T>) {
+		if !self.updater.dirty_props.contains(&id.0) {
+			self.updater.dirty_props.push(id.0);
+		}
+	}
+
+	/// respond to the currently pending updates.
+	///
+	/// this method takes the owner [`Context`] and executes all the effects depended on the queued dirty properties.
+	///
+	/// this method is safe to be called at any time, but a call when finishing using the [`Context`] is always enough.
+	///
+	/// # example
+	/// ```
+	/// fn event_handler (input: u64) {
+	/// 	let ctx = get_ctx();
+	/// 	ctx.write(some_prop, input);
+	/// 	ctx.write(some_other_prop, input + 1);
+	/// 	Store::flush_updates(ctx);
+	/// }
+	/// ```
+	pub fn flush_updates(ctx: &mut Ctx) {
+		if ctx.store().updater.is_updating {
+			return;
+		}
+		Updater::update(ctx);
+
+		// slabs deleted inside effects are removed at the end of an update to simplify logic
+		while let Some(slab) = ctx.store().slabs_to_remove.pop() {
+			Store::drop_slab(ctx, slab);
+		}
+	}
+}
 
 /// <h2 id=tracking>Tracking</h2>
 ///
@@ -841,17 +963,28 @@ impl<Ctx: Context> Store<Ctx> {
 }
 
 /// <h2 id=store-managment>Store Managment</h2>
-impl<Ctx: Context> Store<Ctx> {}
-
 impl<Ctx: Context> Store<Ctx> {
-	pub fn add_global_cleaner(&mut self, fun: impl FnOnce(&mut Ctx) + 'static) {
-		self.global_cleaners.push(Box::new(fun))
-	}
-	pub fn add_cleaner_in(
+	/// add a cleaner function in a specific scope.
+	///
+	/// a cleaner `fun`ction is a function get called with the owner [`Context`] when that scope is being dropped before dropping its items.
+	///
+	/// it add the cleaner to the global scope when `slab` is [`None`], and returns [`Error::Removed`] when the target `slab` is removed.
+	///
+	/// # example
+	/// ```
+	/// let slab = store.create_slab();
+	/// let child_slab = store.create_slab();
+	/// let count = store.prop_in(Some(slab), 1);
+	/// store.add_cleaner(Some(slab), move |ctx| {
+	/// 	println!("count was: {}", ctx.get(count));
+	/// 	Store::remove_slab(ctx, child_slab);
+	/// })
+	/// ```
+	pub fn add_cleaner(
 		&mut self, slab: Option<SlabId>, fun: impl FnOnce(&mut Ctx) + 'static,
 	) -> Result<(), Error> {
 		let Some(slab) = slab else {
-			self.add_global_cleaner(fun);
+			self.global_cleaners.push(Box::new(fun));
 			return Ok(());
 		};
 		if !self.has_slab(slab) {
@@ -861,37 +994,28 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 
-	pub fn is_updating(&self) -> bool {
-		self.updater.is_updating
-	}
-
-	pub fn force_update<T: 'static>(&mut self, id: PropId<T>) {
-		if !self.updater.dirty_props.contains(&id.0) {
-			self.updater.dirty_props.push(id.0);
-		}
-	}
-	pub fn flush_updates(ctx: &mut Ctx) {
-		Updater::update(ctx);
-
-		while let Some(slab) = ctx.store().slabs_to_remove.pop() {
-			Store::drop_slab(ctx, slab);
-		}
-	}
-
+	/// a hook for [`Context`] dropping.
+	///
+	/// `pre_drop` is a function that must be called during the owner [`Context`] dropping.
+	///
+	/// it safely drop the `Store` and calls the [`cleaners`](Store::add_cleaner) for all scopes, starting from the slabs and end with the global scope.
 	pub fn pre_drop(ctx: &mut Ctx) {
 		let store = ctx.store();
 		if store.is_dropped {
 			panic!("calling `Store::pre_drop` twice")
 		}
 		store.is_dropped = true;
+
 		while let Some(&slab) = ctx.store().slabs.keys().next() {
 			Store::remove_slab(ctx, slab).unwrap()
 		}
+
 		while let Some(cleaner) = ctx.store().global_cleaners.pop() {
 			cleaner(ctx)
 		}
 	}
 }
+
 impl<Ctx> Drop for Store<Ctx> {
 	fn drop(&mut self) {
 		if !self.is_dropped {

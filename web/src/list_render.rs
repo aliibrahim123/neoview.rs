@@ -82,7 +82,7 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 				item.unwrap().remover.remove(ctx);
 			}
 		};
-		ctx.store().add_cleaner_in(slab, remover).unwrap()
+		ctx.store().add_cleaner(slab, remover).unwrap()
 	});
 }
 

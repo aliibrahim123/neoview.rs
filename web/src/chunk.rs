@@ -96,7 +96,7 @@ impl<'ctx> RemovableChunk<'ctx> {
 		move |build: &mut ChunkBuild| {
 			build.build_codes.node(el.into());
 			if let Some(slab) = build.slab {
-				build.store().add_cleaner_in(Some(slab), move |ctx| remover.remove(ctx)).unwrap()
+				build.store().add_cleaner(Some(slab), move |ctx| remover.remove(ctx)).unwrap()
 			}
 		}
 	}
