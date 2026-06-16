@@ -1,15 +1,21 @@
+//! defines the [`Cursor`] struct.
+
 use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
 
+/// [`TokenTree`] plus an [`End`](Self::End).
 #[derive(Debug)]
 pub enum Token {
 	Group(Group),
 	Ident(Ident),
+	/// extracted [`Punct`]
 	Punct(char, Span, Spacing),
 	Literal(Literal),
+	/// end of stream plus its [`Span`]
 	End(Span),
 }
 impl Token {
+	/// returns the [`Span`] of the [`Token`]
 	pub fn span(&self) -> Span {
 		match self {
 			Token::Group(group) => group.span(),
@@ -43,6 +49,7 @@ impl ToTokens for Token {
 		}
 	}
 }
+/// packs `(char, span, spacing)` into a [`Punct`]
 fn pack_punct(char: char, span: Span, spacing: Spacing) -> Punct {
 	let mut punct = Punct::new(char, spacing);
 	punct.set_span(span);
@@ -64,6 +71,7 @@ impl Into<TokenTree> for Token {
 	}
 }
 
+/// test if a [`Token`] is a [`Punct`] of a specific character
 macro_rules! match_punct {
 	($tok:expr, $pat:pat) => {
 		matches!($tok, $crate::cursor::Token::Punct($pat, _, _))
@@ -71,6 +79,7 @@ macro_rules! match_punct {
 }
 pub(crate) use match_punct;
 
+/// reducing boilerplate of parsing [`TokenStream`].
 #[derive(Debug)]
 pub struct Cursor {
 	pub tokens: Box<[Token]>,
@@ -78,31 +87,40 @@ pub struct Cursor {
 }
 impl Cursor {
 	pub fn new(stream: TokenStream, end_span: Span) -> Self {
+		// `TokenStream` -> `Vec<Token>`
 		let mut tokens = stream.into_iter().map(|tok| tok.into()).collect::<Vec<_>>();
 		tokens.push(Token::End(end_span));
 		Self { tokens: tokens.into_boxed_slice(), ind: 0 }
 	}
+	/// returns the current [`Token`]
 	pub fn peek(&self) -> &Token {
 		&self.tokens[self.ind]
 	}
+	/// returns the next [`Token`]
 	pub fn peek_next(&self, n: usize) -> &Token {
 		&self.tokens[self.ind + n]
 	}
+	/// skips the current [`Token`]
 	pub fn skip(&mut self) {
 		self.ind += 1;
 	}
+	/// returns the previous [`Token`]
 	pub fn prev(&self) -> &Token {
 		&self.tokens[self.ind - 1]
 	}
+	/// returns `true` if the cursor is at the end
 	pub fn is_end(&self) -> bool {
 		self.ind >= self.tokens.len() - 1
 	}
+	/// returns the current index
 	pub fn ind(&self) -> usize {
 		self.ind
 	}
+	/// sets the current index
 	pub fn recap(&mut self, ind: usize) {
 		self.ind = ind
 	}
+	/// eat a [`Punct`] of a specific character
 	pub fn punct(&mut self, char: char) -> Result<Span, Error> {
 		if self.try_punct(char) {
 			Ok(self.prev().span())
@@ -110,6 +128,7 @@ impl Cursor {
 			err!("expected `{char}`", self.peek().span())
 		}
 	}
+	/// try eat a [`Punct`] of a specific character
 	pub fn try_punct(&mut self, char: char) -> bool {
 		if let Token::Punct(ch, _, _) = self.peek()
 			&& *ch == char
@@ -119,6 +138,7 @@ impl Cursor {
 		}
 		false
 	}
+	/// eat multiple [`Punct`]s of specific characters
 	pub fn multi_punct<const N: usize>(&mut self, chars: [char; N]) -> Result<[Span; N], Error> {
 		if let Some(spans) = self.try_multi_punct(chars) {
 			Ok(spans)
@@ -127,8 +147,10 @@ impl Cursor {
 			err!("expected `{chars}`", self.peek().span())
 		}
 	}
+	/// try eat multiple [`Punct`]s of specific characters
 	pub fn try_multi_punct<const N: usize>(&mut self, chars: [char; N]) -> Option<[Span; N]> {
 		let mut spans = [Span::call_site(); N];
+		// head
 		for i in 0..N - 1 {
 			self.peek_next(i);
 			if let Token::Punct(char, span, Spacing::Joint) = self.peek_next(i)
@@ -139,6 +161,7 @@ impl Cursor {
 			}
 			return None;
 		}
+		// last
 		if let Token::Punct(char, span, _) = self.peek_next(N - 1)
 			&& *char == chars[N - 1]
 		{
@@ -149,6 +172,7 @@ impl Cursor {
 			None
 		}
 	}
+	/// eat an [`Ident`]
 	pub fn ident(&mut self) -> Result<Ident, Error> {
 		if let Some(ident) = self.try_ident() {
 			Ok(ident)
@@ -156,12 +180,14 @@ impl Cursor {
 			err!("expected an identifier", self.peek().span())
 		}
 	}
+	/// try eat an [`Ident`]
 	pub fn try_ident(&mut self) -> Option<Ident> {
 		let Token::Ident(ident) = self.peek() else { return None };
 		let ident = ident.clone();
 		self.skip();
 		Some(ident)
 	}
+	/// eat a specific [`Ident`]
 	pub fn kw(&mut self, kw: &str) -> Result<Span, Error> {
 		if self.try_kw(kw) {
 			Ok(self.prev().span())
@@ -169,6 +195,7 @@ impl Cursor {
 			err!("expected `{kw}`", self.peek().span())
 		}
 	}
+	/// try eat a specific [`Ident`]
 	pub fn try_kw(&mut self, kw: &str) -> bool {
 		let Token::Ident(ident) = self.peek() else { return false };
 		if ident == kw {
@@ -177,10 +204,13 @@ impl Cursor {
 		}
 		false
 	}
+	/// test a specific [`Ident`]
 	pub fn test_kw(&mut self, kw: &str) -> bool {
 		let Token::Ident(ident) = self.peek() else { return false };
 		ident == kw
 	}
+	/// eat a [`Literal`]
+	#[allow(unused)]
 	pub fn literal(&mut self) -> Result<Literal, Error> {
 		if let Some(lit) = self.try_literal() {
 			Ok(lit)
@@ -188,12 +218,14 @@ impl Cursor {
 			err!("expected a literal", self.peek().span())
 		}
 	}
+	/// try eat a [`Literal`]
 	pub fn try_literal(&mut self) -> Option<Literal> {
 		let Token::Literal(lit) = self.peek() else { return None };
 		let lit = lit.clone();
 		self.skip();
 		Some(lit)
 	}
+	/// eat a [`Group`] of a specific [`Delimiter`]
 	pub fn group(&mut self, delim: Delimiter) -> Result<Group, Error> {
 		if let Some(group) = self.try_group(delim) {
 			Ok(group)
@@ -207,6 +239,7 @@ impl Cursor {
 			err!("expected `{bracket}`", self.peek().span())
 		}
 	}
+	/// try eat a [`Group`] of a specific [`Delimiter`]
 	pub fn try_group(&mut self, delim: Delimiter) -> Option<Group> {
 		let Token::Group(group) = self.peek() else { return None };
 		if group.delimiter() == delim {
@@ -217,14 +250,18 @@ impl Cursor {
 			None
 		}
 	}
+	/// creates a [`Cursor`] for the stream of a [`Group`] of a specific [`Delimiter`]
+	#[allow(unused)]
 	pub fn enter_group(&mut self, delim: Delimiter) -> Result<Cursor, Error> {
 		let group = self.group(delim)?;
 		Ok(Cursor::new(group.stream(), group.span_close()))
 	}
+	/// try creates a [`Cursor`] for the stream of a [`Group`] of a specific [`Delimiter`]
 	pub fn try_enter_group(&mut self, delim: Delimiter) -> Option<Cursor> {
 		let group = self.try_group(delim)?;
 		Some(Cursor::new(group.stream(), group.span_close()))
 	}
+	/// eat all tokens until `pred` returns `true`
 	pub fn eat_until(&mut self, pred: impl Fn(&Token) -> bool) -> Vec<TokenTree> {
 		let mut tokens = Vec::new();
 		while !(self.is_end() || pred(self.peek())) {
@@ -243,6 +280,7 @@ impl Cursor {
 	}
 }
 
+/// [`Token`] parsing error
 #[derive(Debug, Clone)]
 pub struct Error {
 	msg: String,
@@ -261,6 +299,7 @@ impl ToTokens for Error {
 	}
 }
 
+/// simplifies [`Error`] creation
 macro_rules! err {
 	($msg:literal, $span:expr) => {
 		Err(crate::cursor::Error::new(format!($msg), $span))

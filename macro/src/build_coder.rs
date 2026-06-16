@@ -1,17 +1,20 @@
+//! transform [`ChunkInput`] to [`TokenStream`]
+
 use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::parse::{Child, ChunkInput, Element, Tag};
 
+/// transform [`ChunkInput`] to [`TokenStream`]
 pub fn encode(input: ChunkInput) -> TokenStream {
-	let ChunkInput { build, children: nodes } = input;
+	let ChunkInput { build, children } = input;
 	let mut codes = quote! {
 		let mut build = &mut #(#build)*;
 		let mut el = __buildcode::start_chunk!(build);
 	};
 
-	for node in nodes {
-		encode_node(&mut codes, node);
+	for child in children {
+		encode_child(&mut codes, child);
 	}
 
 	quote! { {
@@ -20,8 +23,8 @@ pub fn encode(input: ChunkInput) -> TokenStream {
 	} }
 }
 
-fn encode_node(codes: &mut TokenStream, node: Child) {
-	match node {
+fn encode_child(codes: &mut TokenStream, child: Child) {
+	match child {
 		Child::Content(content) => {
 			codes.extend(quote! { __buildcode::content!(build, el, #(#content)*); })
 		}
@@ -37,7 +40,7 @@ fn encode_node(codes: &mut TokenStream, node: Child) {
 			}
 
 			for child in children {
-				encode_node(&mut el_codes, child);
+				encode_child(&mut el_codes, child);
 			}
 
 			codes.extend(quote! {

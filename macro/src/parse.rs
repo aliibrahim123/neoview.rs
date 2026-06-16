@@ -1,3 +1,4 @@
+//! parse `chunk` input
 use proc_macro2::{
 	Delimiter::{self, Brace},
 	Ident, Literal, Span, TokenStream, TokenTree,
@@ -6,6 +7,9 @@ use quote::{ToTokens, TokenStreamExt, quote};
 
 use crate::cursor::{Cursor, Error, Token, err, match_punct};
 
+/// rust simple path
+///
+/// grammer: `"::"? list<ident, "::">`
 #[derive(Debug)]
 pub struct Path {
 	pub leading_colon: bool,
@@ -23,26 +27,38 @@ impl ToTokens for Path {
 	}
 }
 
+/// item that can be exist inside the chunk ui tree
 #[derive(Debug)]
 pub enum Child {
 	Element(Element),
+	/// grammer:  `"do" "{" _* "}" | "for" _+ "{" _* "}" | "match" _+ "{" _* "}" | "if" _+ "{" _* "}" ("else" _+ "{" _* "}")*`
 	DoBlock(Vec<TokenTree>),
+	/// grammer: `_+`
 	Content(Vec<TokenTree>),
 }
 
+/// an [`Element`] tag.
+///
+/// grammer: `path | str_lit`
 #[derive(Debug)]
 pub enum Tag {
 	Path(Path),
 	Lit(Literal),
 }
 
+/// a ui element
+///
+/// grammer: `(tag = path | str_lit) (attrs | body | attrs body)`
 #[derive(Debug)]
 pub struct Element {
 	pub tag: Tag,
+	/// grammer: `(` list<ident | _+ ":" _+, ",">? ","? `)`
 	pub attrs: Vec<(Vec<TokenTree>, Vec<TokenTree>)>,
+	/// grammer: `{" children? "}`
 	pub children: Vec<Child>,
 }
 
+/// `chunk` input
 #[derive(Debug)]
 pub struct ChunkInput {
 	pub build: Vec<TokenTree>,
@@ -64,13 +80,22 @@ pub fn try_parse_path(cur: &mut Cursor) -> Option<Path> {
 	Some(Path { leading_colon, segments })
 }
 
+/// grammer:
+/// ```text
+/// (child_opt_comma | child_req_comma) (","? child_opt_comma | "," child_req_comma)* ","?;
+/// let child_opt_comma = element | do_block;
+/// let child_req_comma = content;
+/// ```
 fn parse_children(cur: &mut Cursor) -> Result<Vec<Child>, Error> {
 	let mut children = Vec::new();
 	while !cur.is_end() {
+		// do block
 		if cur.try_kw("do") {
 			let block = cur.group(Brace)?;
 			children.push(Child::DoBlock(block.stream().into_iter().collect()));
-		} else if cur.test_kw("if") {
+		}
+		// if shorthand
+		else if cur.test_kw("if") {
 			let mut block = Vec::new();
 			loop {
 				block.extend(cur.eat_until(
@@ -82,18 +107,24 @@ fn parse_children(cur: &mut Cursor) -> Result<Vec<Child>, Error> {
 				}
 			}
 			children.push(Child::DoBlock(block))
-		} else if cur.test_kw("for") | cur.test_kw("match") {
+		}
+		// for and match shorthand
+		else if cur.test_kw("for") | cur.test_kw("match") {
 			let mut block = cur.eat_until(
 				|token| matches!(token, Token::Group(group) if group.delimiter() == Brace),
 			);
 			block.push(cur.group(Brace)?.into());
 			children.push(Child::DoBlock(block))
-		} else if let Some(el) = try_parse_el(cur)? {
+		}
+		// element
+		else if let Some(el) = try_parse_el(cur)? {
 			children.push(Child::Element(el));
 			if !match_punct!(cur.peek(), ',') {
 				continue;
 			}
-		} else {
+		}
+		// content
+		else {
 			let content = cur.eat_until(|token| match_punct!(token, ','));
 			if content.is_empty() {
 				return err!("expected an element, expression or a do block", cur.peek().span());
@@ -117,6 +148,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 	};
 
 	let mut has_body = false;
+
 	let mut attrs = Vec::new();
 	if let Some(mut cur) = cur.try_enter_group(Delimiter::Parenthesis) {
 		has_body = true;
@@ -125,6 +157,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 			if attr.is_empty() {
 				return err!("expected an attribute", cur.peek().span());
 			}
+			// single ident shorthand
 			if (cur.is_end() || match_punct!(cur.peek(), ','))
 				&& matches!(&attr[..], [TokenTree::Ident(_)])
 			{
@@ -163,8 +196,8 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
 	let mut cur = Cursor::new(input.into(), Span::call_site());
 
-	let chunk = cur.eat_until(|token| match_punct!(token, ','));
-	if chunk.is_empty() {
+	let build = cur.eat_until(|token| match_punct!(token, ','));
+	if build.is_empty() {
 		return err!("expected an expression", cur.peek().span());
 	}
 	cur.punct(',')?;
@@ -174,5 +207,5 @@ pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
 		return err!("expected an element, expression or a do block", cur.peek().span());
 	}
 
-	Ok(ChunkInput { build: chunk, children: nodes })
+	Ok(ChunkInput { build, children: nodes })
 }
