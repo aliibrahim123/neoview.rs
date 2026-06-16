@@ -76,29 +76,21 @@
 //!
 //! The available renderers include:
 //! - [`neoview-web`](https://docs.rs/neoview-web/latest/neoview-web/): A renderer targeting the web platform based on HTML and the DOM.
-//!
-//! If you would like to target an unsupported platform, please refer to the [renderer integration](docs::render_integ) section.
 
 mod context;
 mod prop;
 mod store;
 mod updater;
 
-#[cfg(doc)]
-/// other documentation sections.
-pub mod docs {
-	pub mod render_integ;
-}
-
-/// construct a ui chunk in an expressive object like syntax.
+/// Constructs a UI chunk in an expressive, object-like syntax.
 ///
-/// `chunk` is a macro that defines and append a ui chunk to the given [build](docs::render_integ#build) in renderer defined universal expressive syntax.
+/// `chunk` is a macro that defines and appends a UI chunk to the given chunk build using a universal, expressive syntax defined by the renderer.
 ///
-/// `chunk` acts as a bridge, it parses a universal and raw element tree syntax into a series of [buildcodes](#buildcodes), these buildcodes are defined by the renderer who futher refine and restrict the syntax by them.
+/// `chunk` acts as a bridge. It parses a universal and raw element tree syntax into a series of [buildcodes](#buildcodes). These buildcodes are defined by the renderer, which further refines and restricts the syntax.
 ///
-/// `chunk` allow the same expressive syntax to be universal between all renderers, however each renderer has the right to interpret and refine the syntax to its needs.
+/// `chunk` allows the same expressive syntax to be universal across all renderers, however, each renderer has the right to interpret and refine the syntax according to its needs.
 ///
-/// `chunk` is not the only way of templating, the renderer can provide additional ways of templating.
+/// `chunk` is not the only way of templating, the renderer can provide additional templating methods.
 ///
 /// # Example
 /// ```
@@ -113,50 +105,58 @@ pub mod docs {
 /// 	}
 /// });
 /// ```
-/// # syntax
+///
+/// ### Chunk Builds
+/// Chunk builds are types that construct ui, they are passed to `chunk` macro and to the buildcodes, and are renderer defined.
+///
+/// They bahave like a tree builder not a linear one, chunks can be appended to them at any point inside the ui structure.
+///
+/// It is suggest to implement [`StoreProv`] or [`ScopedStoreProv`] for them to make them more ergonomic.
+///
+/// # Syntax
 /// This section uses the [gramex meta language](https://docs.rs/gramex/latest/gramex/docs/gram_ref/index.html).
-/// ### `chunk` arguments.
+///
+/// ### `chunk` Arguments
 /// ```text
 /// let chunk_args = (build = expr) "," children;
 /// ```
-/// the `chunk` takes 2 arguments, a `build` expression of type defined by the renderer, and a list of children appended to the build at the target point.
+/// The `chunk` macro takes two arguments: a `build` expression (whose type is defined by the renderer), and a list of children to be appended to the build at the target point.
 ///
-/// ### children
+/// ### Children
 /// ```text
 /// let children = (child_opt_comma | child_req_comma) (","? child_opt_comma | "," child_req_comma)* ","?;
 /// let child_opt_comma = element | do_block;
 /// let child_req_comma = content;
 /// ```
+/// The chunk syntax represents a tree of element children, where children are items that can be nested inside an element.
 ///
-/// the chunk syntax is an element children tree, where childrens are items that can be an element child.
-///
-/// comma is used to separate childrens, some have it optional ([elements](#element) and [do blocks](#do-block)), others requires it ([contents](#content)), a trailing comma is allowed.
+/// A comma is used to separate children. Some items have it as optional ([elements](#element) and [do blocks](#do-block)), while others require it ([contents](#content)). A trailing comma is allowed.
 ///
 /// ```
 /// chunk!(build,
 /// 	el {} do {} "content", "other content", el {}
-/// 	// same as
+/// 	// same as:
 /// 	el {}, do {}, "content", "other content", el {},
 /// );
 /// ```
 ///
-/// ### element
+/// ### Element
 /// ```text
 /// let element = (tag = path | str_lit) (attrs | body | attrs body);
 /// let attrs = "(" list<ident | _+ ":" _+, ",">? ","? ")";
 /// let body = "{" children? "}";
 /// ```
-/// an element is a ui element defined by a tag and can have attributes, children or both.
+/// An element is a UI element defined by a tag, and it can have attributes, children, or both.
 ///
-/// tag can be a [path](https://doc.rust-lang.org/reference/paths.html#simple-paths) or a string literal.
+/// A tag can be a [path](https://doc.rust-lang.org/reference/paths.html#simple-paths) or a string literal.
 ///
-/// attributes is a comma separated list of `name: value` pairs enclosed inside paranthesis (`()`), where name and value can be any token list not containing `,` or `:`.
+/// Attributes are a comma-separated list of `name: value` pairs enclosed inside parentheses (`()`), where the name and value can be any token list not containing a `,` or `:`.
 ///
-/// a single identifier can be used as attr in case both name and value are the same identifier.
+/// A single identifier can be used as an attribute as a shorthand when both the name and the value are the same identifier.
 ///
-/// body is a curly (`{}`) block optionally containing children.
+/// The body is a curly brace (`{}`) block optionally containing children.
 ///
-/// tags, attributes names and values are made raw to support any renderer, the renderer will further restrict and refine them for his needs.
+/// Tags, attribute names, and values are kept raw to support any renderer; the renderer will further restrict and refine them for its needs.
 ///
 /// ```
 /// chunk!(build,
@@ -166,20 +166,20 @@ pub mod docs {
 /// );
 /// ```
 ///
-/// ### do block
+/// ### Do Block
 /// ```text
 /// let do_block =
 ///     "do" "{" _* "}" | "for" _+ "{" _* "}" | "match" _+ "{" _* "}" |
 ///     "if" _+ "{" _* "}" ("else" _+ "{" _* "}")*
 /// ;
 /// ```
-/// do blocks are expression blocks that are evaluated when the execution reach where the block is defined inside the tree.
+/// Do blocks are expression blocks that are evaluated when execution reaches where the block is defined inside the tree.
 ///
-/// they are a unique feature to neocomp that allow to inline the logic with its ui and separate the ui into multiple nested chunks.
+/// They are a unique feature to `neocomp` that allow inlining logic within the UI and separating the UI into multiple nested chunks.
 ///
-/// do blocks are defined as `do` followed by an expression block, there are direct shorthand for `if`, `for` and `match` expressions.
+/// Do blocks are defined using the `do` keyword followed by an expression block. There are also direct shorthands for `if`, `for`, and `match` expressions.
 ///
-/// note: do blocks and their shorthands are static and not dynamic, for the dynamic versions see your renderer's documentation.
+/// Note: Do blocks and their shorthands are static and not dynamic. For dynamic versions, see your renderer's documentation.
 ///
 /// ```
 /// chunk!(build, div {
@@ -208,26 +208,26 @@ pub mod docs {
 /// });
 /// ```
 ///
-/// ### content
+/// ### Content
 /// ```text
 /// let content = _+;
 /// ```
-/// content is any token list that is not an element or a do block.
+/// Content is any token list that is not an element or a do block.
 ///
-/// it can be a string literial, and expression or any other token list defined by the renderer.
+/// It can be a string literal, an expression, or any other token list defined by the renderer.
 ///
 /// ```
 /// chunk!(build, "content", variable, 1 + 1, [1, 2, 3], move |ctx| ctx.get(prop));
 /// ```
 ///
-/// # buildcodes
-/// this section is meant for renderers maintainers.
+/// # Buildcodes
+/// This section is meant for renderer maintainers.
 ///
-/// the `chunk` macro transform the element tree into a series of calls to buildcodes.
+/// The `chunk` macro transforms the element tree into a series of calls to buildcodes.
 ///
-/// buildcodes are macros defined inside a module called `__buildcode` inside the caller scope.
+/// Buildcodes are macros defined inside a module named `__buildcode` within the caller's scope.
 ///
-/// ### chunk buildcodes
+/// ### Chunk Buildcodes
 /// ```
 /// macro_rules! start_chunk {
 /// 	($build:expr) => { el:expr }
@@ -237,65 +237,65 @@ pub mod docs {
 /// }
 /// ```
 ///
-/// `chunk` starts by storing the `build` argument into a local variable, to pass it to all buildcodes in the `build` argument.
+/// The `chunk` macro starts by storing the `build` argument into a local variable so that it can be passed to all buildcodes.
 ///
-/// then it calls `start_chunk` to adjust the build and returns the parent element of the top point.
+/// Then, it calls `start_chunk` to adjust the build and returns the parent element of the top point.
 ///
-/// then it calls buildcodes of the top children.
+/// Next, it calls the buildcodes of the top-level children.
 ///
-/// finaly it calls `end_chunk` with the parent element of the top point to end the chunk.
+/// Finally, it calls `end_chunk` with the parent element of the top point to end the chunk.
 ///
-/// ### element buildcodes
+/// ### Element Buildcodes
 /// ```
 /// macro_rules! start_el {
-/// 	($build:build, $el:expr, $($tag:tt)+) => { $el:expr };
+/// 	($build:expr, $el:expr, $($tag:tt)+) => { $el:expr };
 /// }
 /// macro_rules! attr {
-/// 	($build:build, $el:expr, [$($name:tt)+], $($value:tt)+) => { };
+/// 	($build:expr, $el:expr, [$($name:tt)+], $($value:tt)+) => { };
 /// }
 /// macro_rules! end_el {
-/// 	($build:build, $parent:expr, $el:expr, $($tag:tt)+) => { $el:expr };
+/// 	($build:expr, $parent:expr, $el:expr, $($tag:tt)+) => { $el:expr };
 /// }
 /// ```
-/// an element is tranformed into call to `start_el` with the tag tokens and the parent element to returns the new element.
+/// An element is transformed into a call to `start_el` with the tag tokens and the parent element to return the new element.
 ///
-/// then attributes are transformed into calls to `attr` with the name and value tokens, and the element.
+/// Then, attributes are transformed into calls to `attr` with the name tokens, value tokens, and the element.
 ///
-/// then calls to children buildcodes.
+/// Next, calls are made to the children's buildcodes.
 ///
-/// finally a call to `end_el` with the parent element, the new element and the tag tokens.
+/// Finally, a call to `end_el` is made with the parent element, the new element, and the tag tokens.
 ///
-/// elements type is left to the renderer, and it can be a `()` if not needed.
+/// The element's type is left up to the renderer, and it can be `()` if not needed.
 ///
-/// ### content buildcode
+/// ### Content Buildcode
 /// ```
 /// macro_rules! content {
-/// 	($build:build, $el:expr, $($content:tt)+) => { };
+/// 	($build:expr, $el:expr, $($content:tt)+) => { };
 /// }
 /// ```
-/// `content` is called for every content with the element and the content tokens.
+/// `content` is called for every piece of content with the element and the content tokens.
 ///
-/// ### do block buildcodes
+/// ### Do Block Buildcodes
 /// ```
 /// macro_rules! start_do_block {
-/// 	($build:build, $el:expr) => { };
+/// 	($build:expr, $el:expr) => { };
 /// }
 /// macro_rules! end_do_block {
-/// 	($build:build, $el:expr) => { };
+/// 	($build:expr, $el:expr) => { };
 /// }
 /// ```
 /// `start_do_block` and `end_do_block` are called for every do block with the element.
 ///
-/// a do block is transformed into an expression block of a call to `start_do_block`, the the block contents then a call to `end_do_block`.
+/// A do block is transformed into an expression block containing a call to `start_do_block`, followed by the block contents, and finally a call to `end_do_block`.
 ///
-/// ### example
+/// ### Example
 /// ```
 /// chunk!(build, div {
 /// 	span(id: "hello") { "world" }
 /// 	do { println!("hello") }
 /// });
 ///
-///	/// will be transformed into something like
+///	// will be transformed into something like:
 /// {
 /// 	let mut build = build;
 /// 	let mut el = __buildcode::start_chunk!(build);
@@ -303,10 +303,10 @@ pub mod docs {
 /// 		let mut el = __buildcode::start_el!(build, el, div);
 /// 		let mut child = {
 ///				let el = __buildcode::start_el!(build, el, span);
-///				__buildcode::attr!(build, el, [id], hello);
+///				__buildcode::attr!(build, el, [id], "hello");
 ///				__buildcode::content!(build, el, "world");
 /// 			el
-///			}
+///			};
 ///			__buildcode::end_el!(build, el, child, span);
 /// 		{
 /// 			__buildcode::start_do_block!(build, el);
