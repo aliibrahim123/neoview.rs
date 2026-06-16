@@ -12,11 +12,13 @@ use crate::{
 	updater::{Updater, start_track_panicing},
 };
 
+type Cleaner<Ctx> = Box<dyn FnOnce(&mut Ctx)>;
+
 /// Stores items owned by a slab.
 pub struct SlabData<Ctx> {
 	pub props: Vec<ItemId>,
 	pub effects: Vec<ItemId>,
-	pub cleaner: Vec<Box<dyn FnOnce(&mut Ctx)>>,
+	pub cleaner: Vec<Cleaner<Ctx>>,
 }
 impl<Ctx> Default for SlabData<Ctx> {
 	fn default() -> Self {
@@ -104,7 +106,7 @@ pub struct Store<Ctx> {
 
 	pub(crate) updater: Updater<Ctx>,
 
-	global_cleaners: Vec<Box<dyn FnOnce(&mut Ctx)>>,
+	global_cleaners: Vec<Cleaner<Ctx>>,
 	is_dropped: bool,
 
 	// `RefCell` so that `read` doesn't require a mutable reference.
@@ -163,7 +165,7 @@ impl<Ctx: Context> Store<Ctx> {
 	/// let text = store.prop("hello".to_string());
 	/// struct Value { a: i32, b: f64, c: String, d: Vec<u8> }
 	/// let value = store.prop(Value {
-	/// 	a: 1, b: 1.5, c: "abc".to_string(), d: vec![1, 2, 3],
+	///     a: 1, b: 1.5, c: "abc".to_string(), d: vec![1, 2, 3],
 	/// });
 	/// ```
 	pub fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
@@ -746,16 +748,16 @@ impl<Ctx: Context> Store<Ctx> {
 /// let d = store.prop(1);
 ///
 /// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
-/// 	ctx.write(b, ctx.get(a));
+///     ctx.write(b, ctx.get(a));
 /// });
 /// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
-/// 	ctx.write(c, ctx.get(b) + 1);
+///     ctx.write(c, ctx.get(b) + 1);
 /// });
 /// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
-/// 	ctx.write(c, ctx.get(b) + 2);
+///     ctx.write(c, ctx.get(b) + 2);
 /// });
 /// Store::effect(ctx, None, EffectDeps::Tracked, move |ctx| {
-/// 	ctx.write(d, ctx.get(c) + ctx.get(a));
+///     ctx.write(d, ctx.get(c) + ctx.get(a));
 /// });
 ///
 /// store.write(a, 2);
@@ -773,17 +775,17 @@ impl<Ctx: Context> Store<Ctx> {
 ///
 /// # Example
 /// ```
-///	let a = store.prop(1);
+///    let a = store.prop(1);
 /// let b = store.prop(1);
 ///
 /// let mut old = store.get(a);
 /// let deps = EffectDeps::Manual { read: Vec::new(), write: Vec::new(), init_run: true };
 /// Store::effect(ctx, None, deps, move |ctx| {
-/// 	if ctx.peek(a) != &old {
-/// 		old = ctx.get(a);
-/// 		ctx.write(b, old + 1);
-/// 		ctx.store().force_update(b);
-/// 	}
+///     if ctx.peek(a) != &old {
+///         old = ctx.get(a);
+///         ctx.write(b, old + 1);
+///         ctx.store().force_update(b);
+///     }
 /// });
 /// ```
 impl<Ctx: Context> Store<Ctx> {
@@ -806,17 +808,17 @@ impl<Ctx: Context> Store<Ctx> {
 	///
 	/// # Example
 	/// ```
-	///	let a = store.prop(1);
+	///    let a = store.prop(1);
 	/// let b = store.prop(1);
 	///
 	/// let mut old = store.get(a);
 	/// let deps = EffectDeps::Manual { read: Vec::new(), write: Vec::new(), init_run: true };
 	/// Store::effect(ctx, None, deps, move |ctx| {
-	/// 	if ctx.peek(a) != &old {
-	/// 		old = ctx.get(a);
-	/// 		ctx.write(b, old + 1);
-	/// 		ctx.store().force_update(b);
-	/// 	}
+	///     if ctx.peek(a) != &old {
+	///         old = ctx.get(a);
+	///         ctx.write(b, old + 1);
+	///         ctx.store().force_update(b);
+	///     }
 	/// });
 	/// ```
 	pub fn force_update<T: 'static>(&mut self, id: PropId<T>) {
@@ -834,10 +836,10 @@ impl<Ctx: Context> Store<Ctx> {
 	/// # Example
 	/// ```
 	/// fn event_handler(input: u64) {
-	/// 	let ctx = get_ctx();
-	/// 	ctx.write(some_prop, input);
-	/// 	ctx.write(some_other_prop, input + 1);
-	/// 	Store::flush_updates(ctx);
+	///     let ctx = get_ctx();
+	///     ctx.write(some_prop, input);
+	///     ctx.write(some_other_prop, input + 1);
+	///     Store::flush_updates(ctx);
 	/// }
 	/// ```
 	pub fn flush_updates(ctx: &mut Ctx) {
@@ -973,8 +975,8 @@ impl<Ctx: Context> Store<Ctx> {
 	/// let child_slab = store.create_slab();
 	/// let count = store.prop_in(Some(slab), 1);
 	/// store.add_cleaner(Some(slab), move |ctx| {
-	/// 	println!("count was: {}", ctx.get(count));
-	/// 	Store::remove_slab(ctx, child_slab);
+	///     println!("count was: {}", ctx.get(count));
+	///     Store::remove_slab(ctx, child_slab);
 	/// })
 	/// ```
 	pub fn add_cleaner(

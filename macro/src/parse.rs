@@ -194,7 +194,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 }
 
 pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
-	let mut cur = Cursor::new(input.into(), Span::call_site());
+	let mut cur = Cursor::new(input, Span::call_site());
 
 	let build = cur.eat_until(|token| match_punct!(token, ','));
 	if build.is_empty() {

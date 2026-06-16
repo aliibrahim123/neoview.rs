@@ -7,9 +7,11 @@ use smallvec::SmallVec;
 
 use crate::{PropId, Store, context::Context, prop::ItemId};
 
+type EffectFn<Ctx> = Box<dyn FnMut(&mut Ctx)>;
+
 /// effect data
 pub struct Effect<Ctx> {
-	fun: Option<Box<dyn FnMut(&mut Ctx)>>,
+	fun: Option<EffectFn<Ctx>>,
 	/// read dependencies
 	read: Vec<ItemId>,
 	/// write dependencies

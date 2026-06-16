@@ -28,10 +28,10 @@ pub fn render_list_enumerated<T: Clone, K: Eq + Hash + 'static>(
 	mut item_chunk: impl FnMut(&mut ChunkBuild, T, PropId<usize>) + 'static,
 ) {
 	#[rustfmt::skip]
-	render_list_core(
-		build, prop, key_fn, true, tag,
-		move |build, item, index| item_chunk(build, item, index.unwrap()),
-	);
+    render_list_core(
+        build, prop, key_fn, true, tag,
+        move |build, item, index| item_chunk(build, item, index.unwrap()),
+    );
 }
 fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 	build: &mut ChunkBuild, prop: PropId<TCont>, key_fn: impl Fn(&T) -> K + 'static,

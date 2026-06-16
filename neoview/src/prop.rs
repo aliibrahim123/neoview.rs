@@ -22,7 +22,7 @@ new_key_type! {
 ///
 /// # example
 /// ```
-///	let count = store.prop(0);
+///    let count = store.prop(0);
 /// assert_eq!(store.get(count), 0);
 /// ```
 #[repr(transparent)]
@@ -57,7 +57,7 @@ impl<T> Debug for PropId<T> {
 }
 impl<T> Clone for PropId<T> {
 	fn clone(&self) -> Self {
-		Self(self.0, self.1)
+		*self
 	}
 }
 impl<T> Copy for PropId<T> {}
@@ -68,7 +68,7 @@ impl<T> PartialEq for PropId<T> {
 }
 impl<T> PartialOrd for PropId<T> {
 	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-		self.0.partial_cmp(&other.0)
+		Some(self.cmp(other))
 	}
 }
 impl<T> Hash for PropId<T> {
@@ -100,7 +100,7 @@ pub struct SlabId(pub(crate) u64);
 impl SlabId {
 	/// return the value of the `SlabId`.
 	pub fn value(&self) -> u64 {
-		self.0 as u64
+		self.0
 	}
 }
 impl Display for SlabId {

@@ -15,11 +15,11 @@ use crate::{PropId, SlabId, Store, store::EffectDeps};
 /// impl Context for SomeContext {}
 /// impl GlobalStoreProv for SomeContext {}
 /// impl StoreProv for SomeContext {
-/// 	type Ctx = Self;
-/// 	fn ctx(&mut self) -> &mut Self::Ctx { self }
-/// 	fn ctx_ref(&self) -> &Self::Ctx { self }
-/// 	fn store(&mut self) -> &mut Store<Self::Ctx> { &mut self.0 }
-/// 	fn store_ref(&self) -> &Store<Self::Ctx> { &self.0 }
+///     type Ctx = Self;
+///     fn ctx(&mut self) -> &mut Self::Ctx { self }
+///     fn ctx_ref(&self) -> &Self::Ctx { self }
+///     fn store(&mut self) -> &mut Store<Self::Ctx> { &mut self.0 }
+///     fn store_ref(&self) -> &Store<Self::Ctx> { &self.0 }
 /// }
 /// ```
 pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
@@ -50,9 +50,9 @@ pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
 /// ```
 /// struct Provider<'a>(&'a mut SomeContext);
 /// impl<'a> StoreProv for Provider<'a> {
-/// 	type Ctx = SomeContext;
-/// 	fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
-/// 	fn ctx_ref(&self) -> &Self::Ctx { self.0 }
+///     type Ctx = SomeContext;
+///     fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
+///     fn ctx_ref(&self) -> &Self::Ctx { self.0 }
 /// }
 /// ```
 ///
@@ -170,10 +170,10 @@ pub trait StoreProv {
 /// ```
 /// let nb = provider.ctx().store().prop_in(Some(provider.slab()), 1);
 /// Store::effect(provider.ctx(), Some(provider.slab()), EffectDeps::Tracked,
-/// 	move |ctx| println!("nb: {}", ctx.store().get(nb))
+///     move |ctx| println!("nb: {}", ctx.store().get(nb))
 /// );
 /// let doubled = Store::computed(provider.ctx(), Some(provider.slab()),
-/// 	move |ctx| ctx.store().get(nb) * 2
+///     move |ctx| ctx.store().get(nb) * 2
 /// );
 ///
 /// // vs
@@ -186,12 +186,12 @@ pub trait StoreProv {
 /// ```
 /// struct Provider<'a>(&'a mut SomeContext, SlabId);
 /// impl<'a> StoreProv for Provider<'a> {
-/// 	type Ctx = SomeContext;
-/// 	fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
-/// 	fn ctx_ref(&self) -> &Self::Ctx { self.0 }
+///     type Ctx = SomeContext;
+///     fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
+///     fn ctx_ref(&self) -> &Self::Ctx { self.0 }
 /// }
 /// impl<'a> ScopedStoreProv for Provider<'a> {
-/// 	fn slab(&self) -> Option<SlabId> { Some(self.1) }
+///     fn slab(&self) -> Option<SlabId> { Some(self.1) }
 /// }
 /// ```
 pub trait ScopedStoreProv: StoreProv {
@@ -271,9 +271,9 @@ pub trait ScopedStoreProv: StoreProv {
 /// ```
 /// struct Provider<'a>(&'a mut SomeContext);
 /// impl<'a> StoreProv for Provider<'a> {
-/// 	type Ctx = SomeContext;
-/// 	fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
-/// 	fn ctx_ref(&self) -> &Self::Ctx { self.0 }
+///     type Ctx = SomeContext;
+///     fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
+///     fn ctx_ref(&self) -> &Self::Ctx { self.0 }
 /// }
 /// impl<'a> GlobalStoreProv for Provider<'a> {}
 /// ```

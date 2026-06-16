@@ -35,13 +35,13 @@
 //! ```rust
 //! // using neoview-web
 //! chunk!(build, div {
-//! 	h1 { "counter" }
-//! 	do {
-//! 		let count = build.prop(0);
-//! 		chunk!(build, button(
-//! 			on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
-//! 		) { "count: ", count });
-//! 	}
+//!     h1 { "counter" }
+//!     do {
+//!         let count = build.prop(0);
+//!         chunk!(build, button(
+//!             on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
+//!         ) { "count: ", count });
+//!     }
 //! });
 //! ```
 //!
@@ -51,19 +51,19 @@
 //!
 //! ```rust
 //! fn counter(build: &mut ChunkBuild, name: PropId<String>) {
-//! 	let count = build.prop(0);
-//! 	chunk!(build, button(
-//! 		on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
-//! 	) { name, ": ", count });
+//!     let count = build.prop(0);
+//!     chunk!(build, button(
+//!         on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
+//!     ) { name, ": ", count });
 //! }
 //! fn main() {
-//! 	// ...
-//! 	chunk!(build, div {
-//! 		for name in 'a'..'z' {
-//! 			let name = build.prop(name.to_string());
-//! 			counter(build, name);
-//! 		}
-//! 	})
+//!     // ...
+//!     chunk!(build, div {
+//!         for name in 'a'..'z' {
+//!             let name = build.prop(name.to_string());
+//!             counter(build, name);
+//!         }
+//!     })
 //! }
 //! ```
 //!
@@ -96,13 +96,13 @@ mod updater;
 /// ```
 /// // using neoview-web
 /// chunk!(build, div {
-/// 	h1 { "counter" }
-/// 	do {
-/// 		let count = build.prop(0);
-/// 		chunk!(build, button(
-/// 			on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
-/// 		) { "count: ", count });
-/// 	}
+///     h1 { "counter" }
+///     do {
+///         let count = build.prop(0);
+///         chunk!(build, button(
+///             on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
+///         ) { "count: ", count });
+///     }
 /// });
 /// ```
 ///
@@ -134,9 +134,9 @@ mod updater;
 ///
 /// ```
 /// chunk!(build,
-/// 	el {} do {} "content", "other content", el {}
-/// 	// same as:
-/// 	el {}, do {}, "content", "other content", el {},
+///     el {} do {} "content", "other content", el {}
+///     // same as:
+///     el {}, do {}, "content", "other content", el {},
 /// );
 /// ```
 ///
@@ -160,9 +160,9 @@ mod updater;
 ///
 /// ```
 /// chunk!(build,
-/// 	el(attr1: value, attr2)
-/// 	ns::el { "content", child {} }
-/// 	"some-el"(ns.attr: (|a, b| a + b)) { "content" }
+///     el(attr1: value, attr2)
+///     ns::el { "content", child {} }
+///     "some-el"(ns.attr: (|a, b| a + b)) { "content" }
 /// );
 /// ```
 ///
@@ -183,28 +183,28 @@ mod updater;
 ///
 /// ```
 /// chunk!(build, div {
-/// 	"after this",
-/// 	do {
-///			let count = build.prop(0);
-/// 		chunk!(build, button(
-/// 			on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
-/// 		) { "count: ", count });
-/// 	}
-/// 	"before this",
+///     "after this",
+///     do {
+///            let count = build.prop(0);
+///         chunk!(build, button(
+///             on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
+///         ) { "count: ", count });
+///     }
+///     "before this",
 ///
-/// 	for name in 'a'..'z' {
-///			chunk!(build, div { name });
-/// 	}
-/// 	if a > b {
-/// 		"greater"
-/// 	} else {
-/// 		"less"
-/// 	}
-/// 	match nb {
-/// 		1 => "one",
-/// 		2 => "two",
-/// 		_ => "other",
-/// 	}
+///     for name in 'a'..'z' {
+///            chunk!(build, div { name });
+///     }
+///     if a > b {
+///         "greater"
+///     } else {
+///         "less"
+///     }
+///     match nb {
+///         1 => "one",
+///         2 => "two",
+///         _ => "other",
+///     }
 /// });
 /// ```
 ///
@@ -230,10 +230,10 @@ mod updater;
 /// ### Chunk Buildcodes
 /// ```
 /// macro_rules! start_chunk {
-/// 	($build:expr) => { el:expr }
+///     ($build:expr) => { el:expr }
 /// }
 /// macro_rules! end_chunk {
-/// 	($build:expr, $el:expr) => {}
+///     ($build:expr, $el:expr) => {}
 /// }
 /// ```
 ///
@@ -248,13 +248,13 @@ mod updater;
 /// ### Element Buildcodes
 /// ```
 /// macro_rules! start_el {
-/// 	($build:expr, $el:expr, $($tag:tt)+) => { $el:expr };
+///     ($build:expr, $el:expr, $($tag:tt)+) => { $el:expr };
 /// }
 /// macro_rules! attr {
-/// 	($build:expr, $el:expr, [$($name:tt)+], $($value:tt)+) => { };
+///     ($build:expr, $el:expr, [$($name:tt)+], $($value:tt)+) => { };
 /// }
 /// macro_rules! end_el {
-/// 	($build:expr, $parent:expr, $el:expr, $($tag:tt)+) => { $el:expr };
+///     ($build:expr, $parent:expr, $el:expr, $($tag:tt)+) => { $el:expr };
 /// }
 /// ```
 /// An element is transformed into a call to `start_el` with the tag tokens and the parent element to return the new element.
@@ -270,7 +270,7 @@ mod updater;
 /// ### Content Buildcode
 /// ```
 /// macro_rules! content {
-/// 	($build:expr, $el:expr, $($content:tt)+) => { };
+///     ($build:expr, $el:expr, $($content:tt)+) => { };
 /// }
 /// ```
 /// `content` is called for every piece of content with the element and the content tokens.
@@ -278,10 +278,10 @@ mod updater;
 /// ### Do Block Buildcodes
 /// ```
 /// macro_rules! start_do_block {
-/// 	($build:expr, $el:expr) => { };
+///     ($build:expr, $el:expr) => { };
 /// }
 /// macro_rules! end_do_block {
-/// 	($build:expr, $el:expr) => { };
+///     ($build:expr, $el:expr) => { };
 /// }
 /// ```
 /// `start_do_block` and `end_do_block` are called for every do block with the element.
@@ -291,32 +291,32 @@ mod updater;
 /// ### Example
 /// ```
 /// chunk!(build, div {
-/// 	span(id: "hello") { "world" }
-/// 	do { println!("hello") }
+///     span(id: "hello") { "world" }
+///     do { println!("hello") }
 /// });
 ///
-///	// will be transformed into something like:
+///    // will be transformed into something like:
 /// {
-/// 	let mut build = build;
-/// 	let mut el = __buildcode::start_chunk!(build);
-///		let mut child = {
-/// 		let mut el = __buildcode::start_el!(build, el, div);
-/// 		let mut child = {
-///				let el = __buildcode::start_el!(build, el, span);
-///				__buildcode::attr!(build, el, [id], "hello");
-///				__buildcode::content!(build, el, "world");
-/// 			el
-///			};
-///			__buildcode::end_el!(build, el, child, span);
-/// 		{
-/// 			__buildcode::start_do_block!(build, el);
-/// 			println!("hello");
-/// 			__buildcode::end_do_block!(build, el);
-/// 		}
-/// 		el
-///		};
-/// 	__buildcode::end_el!(build, el, child, div);
-/// 	__buildcode::end_chunk!(build, el);
+///     let mut build = build;
+///     let mut el = __buildcode::start_chunk!(build);
+///        let mut child = {
+///         let mut el = __buildcode::start_el!(build, el, div);
+///         let mut child = {
+///                let el = __buildcode::start_el!(build, el, span);
+///                __buildcode::attr!(build, el, [id], "hello");
+///                __buildcode::content!(build, el, "world");
+///             el
+///            };
+///            __buildcode::end_el!(build, el, child, span);
+///         {
+///             __buildcode::start_do_block!(build, el);
+///             println!("hello");
+///             __buildcode::end_do_block!(build, el);
+///         }
+///         el
+///        };
+///     __buildcode::end_el!(build, el, child, div);
+///     __buildcode::end_chunk!(build, el);
 /// }
 /// ```
 pub use neoview_macro::chunk;

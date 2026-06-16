@@ -55,17 +55,17 @@ fn pack_punct(char: char, span: Span, spacing: Spacing) -> Punct {
 	punct.set_span(span);
 	punct
 }
-impl Into<TokenTree> for Token {
-	fn into(self) -> TokenTree {
-		match self {
-			Self::Ident(ident) => TokenTree::Ident(ident),
-			Self::Literal(lit) => TokenTree::Literal(lit),
-			Self::Punct(char, span, spacing) => {
+impl From<Token> for TokenTree {
+	fn from(value: Token) -> Self {
+		match value {
+			Token::Ident(ident) => TokenTree::Ident(ident),
+			Token::Literal(lit) => TokenTree::Literal(lit),
+			Token::Punct(char, span, spacing) => {
 				let mut punc = Punct::new(char, spacing);
 				punc.set_span(span);
 				TokenTree::Punct(punc)
 			}
-			Self::Group(group) => TokenTree::Group(group),
+			Token::Group(group) => TokenTree::Group(group),
 			_ => panic!(),
 		}
 	}
@@ -139,6 +139,7 @@ impl Cursor {
 		false
 	}
 	/// eat multiple [`Punct`]s of specific characters
+	#[allow(unused)]
 	pub fn multi_punct<const N: usize>(&mut self, chars: [char; N]) -> Result<[Span; N], Error> {
 		if let Some(spans) = self.try_multi_punct(chars) {
 			Ok(spans)
@@ -173,6 +174,7 @@ impl Cursor {
 		}
 	}
 	/// eat an [`Ident`]
+	#[allow(unused)]
 	pub fn ident(&mut self) -> Result<Ident, Error> {
 		if let Some(ident) = self.try_ident() {
 			Ok(ident)
@@ -188,6 +190,7 @@ impl Cursor {
 		Some(ident)
 	}
 	/// eat a specific [`Ident`]
+	#[allow(unused)]
 	pub fn kw(&mut self, kw: &str) -> Result<Span, Error> {
 		if self.try_kw(kw) {
 			Ok(self.prev().span())
