@@ -1,3 +1,4 @@
+//! define [`Updater`] and the updating system.
 use std::fmt::Debug;
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -6,9 +7,12 @@ use smallvec::SmallVec;
 
 use crate::{PropId, Store, context::Context, prop::ItemId};
 
+/// effect data
 pub struct Effect<Ctx> {
 	fun: Option<Box<dyn FnMut(&mut Ctx)>>,
+	/// read dependencies
 	read: Vec<ItemId>,
+	/// write dependencies
 	write: Vec<ItemId>,
 }
 impl<Ctx> Debug for Effect<Ctx> {
@@ -17,12 +21,16 @@ impl<Ctx> Debug for Effect<Ctx> {
 	}
 }
 
+/// dispatch updates and execute effects
 #[derive(Debug)]
 pub struct Updater<Ctx> {
 	pub effects: SlotMap<ItemId, Effect<Ctx>>,
+	/// read dependencies map: prop -> vec<effectid>
+	// most properties doesnt effect more than 2 effects
 	read_deps: FxHashMap<ItemId, SmallVec<[ItemId; 2]>>,
 
 	pub is_updating: bool,
+	/// properties to update
 	pub dirty_props: Vec<ItemId>,
 }
 impl<Ctx> Default for Updater<Ctx> {
@@ -36,6 +44,7 @@ impl<Ctx> Default for Updater<Ctx> {
 	}
 }
 impl<Ctx: Context> Updater<Ctx> {
+	/// mark a property dirty, outside effects
 	pub fn push_update(&mut self, id: ItemId) {
 		if !(self.is_updating || self.dirty_props.contains(&id)) {
 			self.dirty_props.push(id);
@@ -46,6 +55,7 @@ impl<Ctx: Context> Updater<Ctx> {
 		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) + 'static,
 		deps: Option<(Vec<PropId<()>>, Vec<PropId<()>>)>, init_run: bool,
 	) -> ItemId {
+		// gather deps
 		if deps.is_none() {
 			start_track_panicing(ctx.store_ref());
 		}
@@ -62,30 +72,33 @@ impl<Ctx: Context> Updater<Ctx> {
 		let write = write.into_iter().map(|id| id.0).collect();
 		let read = read.into_iter().map(|id| id.0).collect();
 
+		// add to the graph
 		let updater = &mut store.updater;
 		let id = updater.effects.insert(Effect { fun: Some(Box::new(fun)), write, read });
 
-		for &read in &store.updater.effects[id].read {
-			store.updater.read_deps.entry(read).or_default().push(id);
+		for &read in &updater.effects[id].read {
+			updater.read_deps.entry(read).or_default().push(id);
 		}
 
 		id
 	}
 
+	/// the core of the reactivity where updates are dispatch
 	pub fn update(ctx: &mut Ctx) {
-		let updater = &ctx.store().updater;
 		ctx.store().updater.is_updating = true;
 		while !ctx.store().updater.dirty_props.is_empty() {
 			let updater = &mut ctx.store().updater;
 
+			// gather
 			let mut to_run = Vec::new();
-			let mut visited = FxHashSet::default();
+			let mut visited = FxHashSet::default(); // set of to run
 			let mut visiting = Vec::new();
 			for &prop in &updater.dirty_props {
 				visit(updater, prop, &mut to_run, &mut visited, &mut visiting);
 			}
-
 			updater.dirty_props.clear();
+
+			// update
 			for &id in to_run.iter().rev() {
 				let mut fun = ctx.store().updater.effects[id].fun.take().unwrap();
 				fun(ctx);
@@ -94,20 +107,26 @@ impl<Ctx: Context> Updater<Ctx> {
 		}
 		ctx.store().updater.is_updating = false;
 
+		/// gather effects using topological sort in O(n)
 		fn visit<Ctx: Context>(
 			updater: &Updater<Ctx>, prop: ItemId, to_run: &mut Vec<ItemId>,
 			visited: &mut FxHashSet<ItemId>, visiting: &mut Vec<ItemId>,
 		) {
+			// walk the graph from root level (dirty props) upward
+
+			// can not just unwrap because some effects may depend on removed properties
 			let Some(effects) = updater.read_deps.get(&prop) else { return };
 			for &effect in effects {
 				if visiting.contains(&effect) {
 					panic!("detected circular dependency in an update");
 				}
+				// each effect visited once
 				if visited.contains(&effect) {
 					continue;
 				}
 
 				visiting.push(effect);
+				// its props are visited first then it is added to the list
 				for &prop in &updater.effects[effect].write {
 					visit(updater, prop, to_run, visited, visiting);
 				}
@@ -115,6 +134,8 @@ impl<Ctx: Context> Updater<Ctx> {
 
 				to_run.push(effect);
 				visited.insert(effect);
+
+				// deepest nodes are before any parent nodes, we need the inverse
 			}
 		}
 	}

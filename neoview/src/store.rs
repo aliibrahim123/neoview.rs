@@ -1,3 +1,5 @@
+//! define the [`Store`]
+
 use std::{any::Any, cell::RefCell, fmt::Debug, ops::DerefMut, ptr};
 
 use rustc_hash::FxHashMap;
@@ -189,6 +191,7 @@ impl<Ctx: Context> Store<Ctx> {
 	pub fn prop_in<T: 'static>(
 		&mut self, slab: Option<SlabId>, value: T,
 	) -> Result<PropId<T>, Error> {
+		// global prop
 		let Some(slab) = slab else {
 			return Ok(self.prop(value));
 		};
@@ -564,30 +567,6 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 
-	/// the core fun that create computed properties, it returns (prop, effect_id)
-	pub(crate) fn computed_core<T: 'static>(
-		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) -> T + 'static,
-	) -> (PropId<T>, ItemId) {
-		start_track_panicing(ctx.store_ref());
-		let value = fun(ctx);
-		let store = ctx.store();
-		let TrackResult { read, written } = store.end_track().unwrap();
-
-		if !written.is_empty() {
-			panic!("computed properties can not write any properties");
-		}
-
-		let id = store.prop(value);
-
-		let fun = move |ctx: &mut Ctx| {
-			let value = fun(ctx);
-			ctx.store().write(id, value);
-		};
-		let effect = Updater::add_effect(ctx, fun, Some((read, vec![id.erase_type()])), false);
-
-		(id, effect)
-	}
-
 	/// create a computed property.
 	///
 	/// a computed property is a reactive property that is derived from a `fun`ction taking the [`Context`] and get reevaluated when its dependencies change.
@@ -614,14 +593,32 @@ impl<Ctx: Context> Store<Ctx> {
 	/// assert!(!store.contains(doubled));
 	/// ```
 	pub fn computed<T: 'static>(
-		ctx: &mut Ctx, slab: Option<SlabId>, fun: impl FnMut(&mut Ctx) -> T + 'static,
+		ctx: &mut Ctx, slab: Option<SlabId>, mut fun: impl FnMut(&mut Ctx) -> T + 'static,
 	) -> Result<PropId<T>, Error> {
 		if let Some(slab) = slab
 			&& !ctx.store().has_slab(slab)
 		{
 			return Err(Error::Removed);
 		}
-		let (id, effect) = Self::computed_core(ctx, fun);
+
+		// init value
+		start_track_panicing(ctx.store_ref());
+		let value = fun(ctx);
+		let store = ctx.store();
+		let TrackResult { read, written } = store.end_track().unwrap();
+
+		if !written.is_empty() {
+			panic!("computed properties can not write any properties");
+		}
+
+		let id = store.prop(value);
+
+		// effect
+		let fun = move |ctx: &mut Ctx| {
+			let value = fun(ctx);
+			ctx.store().write(id, value);
+		};
+		let effect = Updater::add_effect(ctx, fun, Some((read, vec![id.erase_type()])), false);
 
 		if let Some(slab) = slab {
 			let slab = ctx.store().slab(slab);
@@ -987,6 +984,7 @@ impl<Ctx: Context> Store<Ctx> {
 			self.global_cleaners.push(Box::new(fun));
 			return Ok(());
 		};
+
 		if !self.has_slab(slab) {
 			return Err(Error::Removed);
 		}

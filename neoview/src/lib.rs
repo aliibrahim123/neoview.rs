@@ -93,7 +93,7 @@ pub mod docs {
 pub use neoview_macro::chunk;
 
 pub use {
-	context::{Context, GlobalStoreProv, LocalStoreProv, ScopedStoreProv, StoreProv},
+	context::{Context, GlobalStoreProv, ScopedStoreProv, StoreProv},
 	prop::{PropId, SlabId},
 	store::{EffectDeps, Store, TrackResult},
 };

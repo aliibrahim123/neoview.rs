@@ -19,5 +19,5 @@ pub use {
 };
 pub mod prelude {
 	pub use crate::{ChunkBuild, DomContext, build_codes::__buildcode};
-	pub use neoview::{GlobalStoreProv, LocalStoreProv, PropId, ScopedStoreProv, StoreProv, chunk};
+	pub use neoview::{PropId, ScopedStoreProv, StoreProv, chunk};
 }

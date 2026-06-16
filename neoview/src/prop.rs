@@ -1,3 +1,4 @@
+//! define item ids
 use std::{
 	fmt::{Debug, Display},
 	hash::Hash,
@@ -91,11 +92,13 @@ impl<T> Ord for PropId<T> {
 /// # example
 /// ```
 /// let slab = store.create_slab();
+/// assert!(store.has_slab(slab));
 /// let count = store.prop_in(slab, 0);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SlabId(pub(crate) u64);
 impl SlabId {
+	/// return the value of the `SlabId`.
 	pub fn value(&self) -> u64 {
 		self.0 as u64
 	}
