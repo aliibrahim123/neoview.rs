@@ -1,4 +1,4 @@
-//! define the [`Store`]
+//! Defines the [`Store`]
 
 use std::{any::Any, cell::RefCell, fmt::Debug, ops::DerefMut, ptr};
 
@@ -12,7 +12,7 @@ use crate::{
 	updater::{Updater, start_track_panicing},
 };
 
-/// stores items owned by a slab
+/// Stores items owned by a slab.
 pub struct SlabData<Ctx> {
 	pub props: Vec<ItemId>,
 	pub effects: Vec<ItemId>,
@@ -32,11 +32,11 @@ impl<Ctx> Debug for SlabData<Ctx> {
 	}
 }
 
-/// the result of a tracking operation.
+/// The result of a tracking operation.
 ///
-/// produced by when the tracking operation is ended with [`Store::end_track`].
+/// Produced when the tracking operation is ended with [`Store::end_track`].
 ///
-/// # example
+/// # Example
 /// ```
 /// let a = store.prop(1);
 /// let b = store.prop(2);
@@ -48,31 +48,31 @@ impl<Ctx> Debug for SlabData<Ctx> {
 /// ```
 #[derive(Debug, Clone, PartialEq, PartialOrd, Default)]
 pub struct TrackResult {
-	/// the properties read.
+	/// The properties read.
 	pub read: Vec<PropId<()>>,
-	/// the properties written to.
+	/// The properties written to.
 	pub written: Vec<PropId<()>>,
 }
 impl TrackResult {
-	/// destruct the `TrackResult` into a `(read, written)` pair
+	/// Destructures the `TrackResult` into a `(read, written)` pair.
 	pub(crate) fn destruct(self) -> (Vec<PropId<()>>, Vec<PropId<()>>) {
 		(self.read, self.written)
 	}
 }
 
-/// the container of the reactivity system.
+/// The container of the reactivity system.
 ///
-/// the `Store` is the structure that owns and manages the entire reactivity system with its [properties](#property-managment) and [effects](#effects).
+/// The `Store` is the structure that owns and manages the entire reactivity system, including its [properties](#property-management) and [effects](#effects).
 ///
-/// it is tightly copouled to a specific [`Context`] that owns it, and its lifetime is identical to it.
+/// It is tightly coupled to a specific owning [`Context`], and its lifetime is identical to it.
 ///
-/// every interaction with the reactive system requires a mutable access to the `Store`, however all the common operations are redirected through the family of [`StoreProv`](crate::StoreProv)iders traits.
+/// Every interaction with the reactive system requires mutable access to the `Store`, however, all common operations are redirected through the family of [`StoreProv`](crate::StoreProv)ider traits.
 ///
-/// ## example
+/// ## Example
 /// ```
 /// let count = store.prop(0);
 /// assert_eq!(store.get(count), 0);
-/// Store::effect(ctx, move |ctx| println!("count: {}", ctx.get(count)))
+/// Store::effect(ctx, move |ctx| println!("count: {}", ctx.get(count)));
 /// store.set(count, 1);
 /// assert_eq!(store.get(count), 1);
 ///
@@ -82,25 +82,24 @@ impl TrackResult {
 /// Store::flush_updates(ctx); // => count: 2
 /// ```
 ///
-/// # sections
-/// due to the large api surface exposed by the `Store`, its documentations has been splitted into multiple parts.
+/// # Sections
+/// Due to the large API surface exposed by the `Store`, its documentation has been split into multiple parts:
 ///
-/// they are:
-/// - [property managment](#property-managment).
-/// - [property access](#property-access).
-/// - [safe property access](#safe-property-access).
-/// - [Effects](#effects).
-/// - [Slab Managment](#slab-managment).
-/// - [Updating](#updating).
-/// - [Tracking](#tracking).
-/// - [Store Managment](#store-managment).
+/// - [Property Management](#property-management)
+/// - [Property Access](#property-access)
+/// - [Safe Property Access](#safe-property-access)
+/// - [Effects](#effects)
+/// - [Slab Management](#slab-management)
+/// - [Updating](#updating)
+/// - [Tracking](#tracking)
+/// - [Store Management](#store-management)
 pub struct Store<Ctx> {
 	pub(crate) props: SlotMap<ItemId, Box<dyn Any>>,
 
 	pub(crate) slabs: FxHashMap<SlabId, SlabData<Ctx>>,
-	/// the `SlabId` of the next slab to be added
+	/// The `SlabId` of the next slab to be added.
 	next_slab: SlabId,
-	/// slabs removed during an update to be deleated at the end of that update
+	/// Slabs removed during an update to be deleted at the end of that update.
 	slabs_to_remove: Vec<SlabId>,
 
 	pub(crate) updater: Updater<Ctx>,
@@ -108,7 +107,7 @@ pub struct Store<Ctx> {
 	global_cleaners: Vec<Box<dyn FnOnce(&mut Ctx)>>,
 	is_dropped: bool,
 
-	// `RefCell` to not make `read` take mutable reference
+	// `RefCell` so that `read` doesn't require a mutable reference.
 	tracking: RefCell<Option<TrackResult>>,
 }
 impl<Ctx: Context> Default for Store<Ctx> {
@@ -132,7 +131,7 @@ impl<Ctx> Debug for Store<Ctx> {
 			.field("slabs", &self.slabs)
 			.field("slabs_to_remove", &self.slabs_to_remove)
 			.field("effects", &self.updater.effects)
-			.field("tarcking", &self.tracking)
+			.field("tracking", &self.tracking)
 			.field("is_dropped", &self.is_dropped)
 			.finish()
 	}
@@ -144,21 +143,21 @@ impl<Ctx> PartialEq for Store<Ctx> {
 }
 impl<Ctx> Eq for Store<Ctx> {}
 
-/// <h2 id=property-managment>Property Managment</h2>
+/// <h2 id=property-management>Property Management</h2>
 ///
-/// reactive properties managment is the sole purpose of the `Store`.
+/// Reactive property management is the primary purpose of the `Store`.
 ///
-/// a reactive property is any value that is used inside the reactivity system, it can be of any type not containing references (`'static` is allowed) and it is owned by the `Store`.
+/// A reactive property is any value used within the reactivity system. It can be of any type that does not contain non-`'static` references, and it is owned by the `Store`.
 ///
-/// a property is created by [`prop`](Store::prop), identified by a [`PropId`], accesed by the [property access methods](#property-access), and can be binded to and by multiple [effects](#effects).
+/// A property is created by [`prop`](Store::prop), identified by a [`PropId`], accessed by the [property access methods](#property-access), and can be bound to and by multiple [effects](#effects).
 ///
-/// individual properties can not be removed, they can only be removed with the store or their owner slab.
+/// Individual properties cannot be removed directly, they can only be removed along with the `Store` or their owning slab.
 impl<Ctx: Context> Store<Ctx> {
-	/// defines a new reactive property in the global scope.
+	/// Defines a new reactive property in the global scope.
 	///
-	/// it accepts the property initial `value`, and returns its [`PropId`],
+	/// It accepts the property's initial `value` and returns its [`PropId`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let count = store.prop(0);
 	/// let text = store.prop("hello".to_string());
@@ -172,19 +171,19 @@ impl<Ctx: Context> Store<Ctx> {
 		PropId::new(id)
 	}
 
-	/// defines a new reactive property in a specific scope.
+	/// Defines a new reactive property in a specific scope.
 	///
-	/// it accepts the target `slab` and the property initial `value`, and returns its [`PropId`].
+	/// It accepts the target `slab` and the property's initial `value`, and returns its [`PropId`].
 	///
-	/// if `slab` is [`None`], the property is defined in the global scope.
+	/// If `slab` is [`None`], the property is defined in the global scope.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let slab = store.create_slab();
 	/// let count = store.prop_in(Some(slab), 0);
 	/// let text = store.prop_in(Some(slab), "hello".to_string());
 	///
-	/// // the same
+	/// // The following two are equivalent:
 	/// let nb = store.prop(1.5);
 	/// let nb = store.prop_in(None, 1.5);
 	/// ```
@@ -203,9 +202,9 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(id)
 	}
 
-	/// check whether a reactive property is inside the `Store`.
+	/// Checks whether a reactive property exists inside the `Store`.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop_in(Some(slab), 1);
 	/// assert!(store.contains(nb));
@@ -219,13 +218,13 @@ impl<Ctx: Context> Store<Ctx> {
 
 /// <h2 id=property-access>Property Access</h2>
 ///
-/// the property access methods are functions that read and mutate the reactive properties defined inside the `Store`.
+/// The property access methods are functions that read and mutate the reactive properties defined inside the `Store`.
 ///
-/// they are of 2 kinds:
-/// - **reading methods**: [`read`](Store::read), [`get`](Store::get) and [`peek`](Store::peek).
-/// - **mutating methods**: [`write`](Store::write), [`read_mut`](Store::read_mut) and [`update`](Store::update).
+/// They are of two kinds:
+/// - **Reading methods**: [`read`](Store::read), [`get`](Store::get), and [`peek`](Store::peek).
+/// - **Mutating methods**: [`write`](Store::write), [`read_mut`](Store::read_mut), and [`update`](Store::update).
 ///
-/// ## example
+/// ## Example
 /// ```
 /// let nb = store.prop(1);
 /// assert_eq!(store.read(nb), 1);
@@ -238,19 +237,19 @@ impl<Ctx: Context> Store<Ctx> {
 /// assert_eq!(store.peek(nb), 4);
 /// ```
 ///
-/// these methods will trigger [updates](#updating), and they might be [tracked](#tracking).
+/// These methods trigger [updates](#updating) and can be [tracked](#tracking).
 ///
-/// these methods are redirected by every [`StoreProv`](crate::StoreProv)ider.
+/// These methods are redirected by every [`StoreProv`](crate::StoreProv)ider.
 ///
-/// these methods are designed to be ergonomic, they will panic on errors, for a safe version see [safe property access](#safe-property-access).
+/// These methods are designed to be ergonomic and will panic on errors. For a non-panicking, fallible version, see [safe property access](#safe-property-access).
 impl<Ctx: Context> Store<Ctx> {
-	/// return a reference to a reactive property value.
+	/// Returns a reference to a reactive property's value.
 	///
-	/// `read` is the property reading primitive, it triggers a read signal while tracking.
+	/// `read` is the primitive for reading properties, it triggers a read signal while tracking.
 	///
-	/// it will panic if the given property is removed, for a safe version see [`try_read`](Store::try_read).
+	/// It will panic if the given property is removed. For a safe version, see [`try_read`](Store::try_read).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop(1);
 	/// let text = store.prop(String::from("abc"));
@@ -265,11 +264,11 @@ impl<Ctx: Context> Store<Ctx> {
 		self.peek(prop)
 	}
 
-	/// return a copy of a [`Copy`]able reactive property value.
+	/// Returns a copy of a [`Copy`]able reactive property's value.
 	///
-	/// it triggers a read signal while tracking, and will panic if the given property is removed, for a safe version see [`try_get`](Store::try_get).
+	/// It triggers a read signal while tracking and will panic if the given property is removed. For a safe version, see [`try_get`](Store::try_get).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop(1);
 	/// let cond = store.prop(true);
@@ -281,13 +280,13 @@ impl<Ctx: Context> Store<Ctx> {
 		*self.read(prop)
 	}
 
-	/// return a reference to a reactive property value without being tracked.
+	/// Returns a reference to a reactive property's value without tracking it.
 	///
-	/// this method is identical to [`read`](Store::read), except it doesnt trigger a read signal.
+	/// This method is identical to [`read`](Store::read), except it doesn't trigger a read signal.
 	///
-	/// it will panic if the given property is removed, for a safe version see [`try_peek`](Store::try_peek).
+	/// It will panic if the given property is removed. For a safe version, see [`try_peek`](Store::try_peek).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let a = store.prop(1);
 	/// let b = store.prop(2);
@@ -302,13 +301,13 @@ impl<Ctx: Context> Store<Ctx> {
 		self.try_peek(prop).expect("reading removed property")
 	}
 
-	/// set a reactive property value.
+	/// Sets a reactive property's value.
 	///
-	/// this method trigger an update, trigger a write signal while tracking and return the previous value of the property.
+	/// This method triggers an update, triggers a write signal while tracking, and returns the previous value of the property.
 	///
-	/// it will panic if the given property is removed, for a safe version see [`try_write`](Store::try_write).
+	/// It will panic if the given property is removed. For a safe version, see [`try_write`](Store::try_write).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop(1);
 	/// let text = store.prop(String::from("abc"));
@@ -322,13 +321,13 @@ impl<Ctx: Context> Store<Ctx> {
 		self.try_write(prop, value).expect("writing removed property")
 	}
 
-	/// return a mutable reference to a reactive property value.
+	/// Returns a mutable reference to a reactive property's value.
 	///
-	/// this method is the mutating property primitive, it triggers an update, and trigger a write signal while tracking.
+	/// This method is the primitive for mutating properties. It triggers an update and triggers a write signal while tracking.
 	///
-	/// it will panic if the given property is removed, for a safe version see [`try_read_mut`](Store::try_read_mut).
+	/// It will panic if the given property is removed. For a safe version, see [`try_read_mut`](Store::try_read_mut).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let arr = store.prop(vec![1, 2, 3]);
 	/// store.read_mut(arr)[2] = 4;
@@ -338,13 +337,13 @@ impl<Ctx: Context> Store<Ctx> {
 		self.try_read_mut(prop).expect("mutating removed property")
 	}
 
-	/// update a reactive property using an updater function.
+	/// Updates a reactive property using an updater function.
 	///
-	/// the `fun`tion is called with a mutable reference to the property value, the method triggers an update and triggers a write signal while tracking.
+	/// The `fun`ction is called with a mutable reference to the property's value. The method triggers an update and triggers a write signal while tracking.
 	///
-	/// it will panic if the given property is removed, for a safe version see [`try_update`](Store::try_update).
+	/// It will panic if the given property is removed. For a safe version, see [`try_update`](Store::try_update).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop(1);
 	/// store.update(nb, |v| *v += 1);
@@ -357,30 +356,30 @@ impl<Ctx: Context> Store<Ctx> {
 
 /// <h2 id=safe-property-access>Safe Property Access</h2>
 ///
-/// these methods are the safe version of the [property access methods](#property-access).
+/// These methods are the safe, non-panicking versions of the [property access methods](#property-access).
 ///
-/// they behave exactly like their conterparts, except they return an [`Error`] for removed properties.
+/// They behave exactly like their counterparts, except they return an [`Error`] (or `None`) for removed properties.
 ///
-/// ## example
+/// ## Example
 /// ```
 /// let nb = store.prop_in(Some(slab), 1);
-/// assert_eq!(store.try_read(nb), Some(1));
+/// assert_eq!(store.try_read(nb), Some(&1));
 /// store.try_write(nb, 2);
 /// assert_eq!(store.try_get(nb), Some(2));
 ///
 /// Store::remove_slab(ctx, slab);
-/// assert!(store.try_peek(nb), None);
-/// store.update(nb, |_| println!("will not run"));
+/// assert_eq!(store.try_peek(nb), None);
+/// store.try_update(nb, |_| println!("will not run"));
 /// ```
 impl<Ctx: Context> Store<Ctx> {
-	/// the safe version of [`read`](Store::read).
+	/// The safe version of [`read`](Store::read).
 	///
-	/// it returns a reference to the given property if it exists, and return [`None`] otherwise without triggering a read signal.
+	/// It returns a reference to the given property if it exists, and returns [`None`] otherwise, without triggering a read signal.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop_in(Some(slab), 1);
-	/// assert_eq!(store.try_read(nb), Some(1));
+	/// assert_eq!(store.try_read(nb), Some(&1));
 	///
 	/// Store::remove_slab(ctx, slab);
 	/// assert_eq!(store.try_read(nb), None);
@@ -391,11 +390,11 @@ impl<Ctx: Context> Store<Ctx> {
 		Some(value)
 	}
 
-	/// the safe version of [`get`](Store::get).
+	/// The safe version of [`get`](Store::get).
 	///
-	/// it returns a copy of the given property if it exists, and return [`None`] otherwise without triggering a read signal.
+	/// It returns a copy of the given property if it exists, and returns [`None`] otherwise, without triggering a read signal.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop_in(Some(slab), 1);
 	/// assert_eq!(store.try_get(nb), Some(1));
@@ -407,14 +406,14 @@ impl<Ctx: Context> Store<Ctx> {
 		self.try_read(prop).copied()
 	}
 
-	/// the safe version of [`peek`](Store::peek).
+	/// The safe version of [`peek`](Store::peek).
 	///
-	/// it returns a reference of the given property if it exists, and return [`None`] otherwise, it doesnt trigger a read signal in both cases.
+	/// It returns a reference to the given property if it exists, and returns [`None`] otherwise. It doesn't trigger a read signal in either case.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop_in(Some(slab), 1);
-	/// assert_eq!(store.try_peek(nb), Some(1));
+	/// assert_eq!(store.try_peek(nb), Some(&1));
 	///
 	/// Store::remove_slab(ctx, slab);
 	/// store.start_track();
@@ -425,28 +424,28 @@ impl<Ctx: Context> Store<Ctx> {
 		self.props.get(prop.0)?.downcast_ref()
 	}
 
-	/// the safe version of [`write`](Store::write).
+	/// The safe version of [`write`](Store::write).
 	///
-	/// it sets the value of the given property if it exists, and return [`Error::Removed`] otherwise without triggering any thing.
+	/// It sets the value of the given property if it exists, and returns [`Error::Removed`] otherwise, without triggering anything.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop_in(Some(slab), 1);
-	/// assert_eq!(store.try_write(nb, 2), Ok(2));
+	/// assert_eq!(store.try_write(nb, 2), Ok(1));
 	///
 	/// Store::remove_slab(ctx, slab);
-	/// assert_eq!(store.try_write(nb), Err(Error::Removed));
+	/// assert_eq!(store.try_write(nb, 3), Err(Error::Removed));
 	/// ```
 	pub fn try_write<T: 'static>(&mut self, prop: PropId<T>, value: T) -> Result<T, Error> {
 		let prop = self.try_read_mut(prop).ok_or(Error::Removed)?;
 		Ok(std::mem::replace(prop, value))
 	}
 
-	/// the safe version of [`read_mut`](Store::read_mut).
+	/// The safe version of [`read_mut`](Store::read_mut).
 	///
-	/// it returns a mutable reference for the given property if it exists, and return [`None`] otherwise without triggering any thing.
+	/// It returns a mutable reference to the given property if it exists, and returns [`None`] otherwise, without triggering anything.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let arr = store.prop_in(Some(slab), vec![1, 2, 3]);
 	/// store.try_read_mut(arr).unwrap()[2] = 4;
@@ -461,14 +460,14 @@ impl<Ctx: Context> Store<Ctx> {
 		Some(value)
 	}
 
-	/// the safe version of [`update`](Store::update).
+	/// The safe version of [`update`](Store::update).
 	///
-	/// it updates the given property with the updater `fun`ction if it exists, and return [`Error::Removed`] otherwise without triggering any thing.
+	/// It updates the given property with the updater `fun`ction if it exists, and returns [`Error::Removed`] otherwise, without triggering anything.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = store.prop_in(Some(slab), 1);
-	/// assert!(store.try_update(nb, |v| *v += 1).is_some);
+	/// assert!(store.try_update(nb, |v| *v += 1).is_ok());
 	///
 	/// Store::remove_slab(ctx, slab);
 	/// assert_eq!(store.try_update(nb, |_| println!("will not run")), Err(Error::Removed));
@@ -482,57 +481,57 @@ impl<Ctx: Context> Store<Ctx> {
 	}
 }
 
-/// an effect dependencies.
+/// An effect's dependencies.
 ///
-/// this enum specifies if the effect dependencies implicitly identified through [tracking](Store#tracking), or manually specified.
+/// This enum specifies whether the effect's dependencies are implicitly identified through [tracking](Store#tracking) or manually specified.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EffectDeps {
-	/// depednencies are identified implicitly by [tracking](Store#tracking).
+	/// Dependencies are identified implicitly via [tracking](Store#tracking).
 	Tracked,
-	/// dependencies are manually specified.
+	/// Dependencies are manually specified.
 	Manual {
-		/// the properties the effect read and reevaluate on.
+		/// The properties the effect reads and reevaluates upon.
 		read: Vec<PropId<()>>,
-		/// the properties the effect write to.
+		/// The properties the effect writes to.
 		write: Vec<PropId<()>>,
-		/// whether to run the effect initialy at definition.
+		/// Whether to run the effect initially upon definition.
 		init_run: bool,
 	},
 }
 
 /// <h2 id=effects>Effects</h2>
 ///
-/// effects are where the reactivity occurs.
+/// Effects are where the reactivity occurs.
 ///
-/// they are functions that depends on specific properties, when the target properties change they rerun, they are passed the owner [`Context`], and must be of `'static` lifetime.
+/// They are functions that depend on specific properties. When the target properties change, they rerun. They are passed the owning [`Context`] and must have a `'static` lifetime.
 ///
-/// to know the effects run order, read the [updating section](#updating).
+/// To understand the effect execution order, see the [updating section](#updating).
 impl<Ctx: Context> Store<Ctx> {
-	/// define an effect.
+	/// Defines an effect.
 	///
-	/// `effect` register the `fun`ction as an effect in a specific scope (global if `slab` is [`None`]), with the dependencies specified.
+	/// `effect` registers the `fun`ction as an effect in a specific scope (global if `slab` is [`None`]), with the specified dependencies.
 	///
-	/// the dependencies can be implicitly identified through [tracking](#tracking) if `deps` is [`EffectDeps::Tracked`], otherwise they are manually specifed through [`EffectDeps::Manual`].
+	/// The dependencies can be implicitly identified through [tracking](#tracking) if `dep` is [`EffectDeps::Tracked`]; otherwise, they are manually specified via [`EffectDeps::Manual`].
 	///
-	/// it takes the context and call the `fun` on definition to identify the dependencies if needed.
+	/// It takes the context and calls the `fun`ction upon definition to identify the dependencies if needed.
 	///
-	/// it returns [`Error::Removed`] if the `slab` is removed.
+	/// It returns [`Error::Removed`] if the `slab` is removed.
 	///
-	/// this method is redirected by every [`ScopedStoreProv`](crate::ScopedStoreProv)ider in a more egornomic format.
+	/// This method is redirected by every [`ScopedStoreProv`](crate::ScopedStoreProv)ider into a more ergonomic format.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// use EffectDeps::*;
 	/// let count = store.prop(1);
 	/// let doubled = store.prop(1);
 	///
 	/// Store::effect(ctx, None, Tracked, move |ctx| println!("doubled: {}", ctx.get(doubled))); // => doubled: 2
-	/// // noop afterward
+	/// // No-op afterward
 	/// Store::effect(ctx, None, Tracked, move |ctx| println!("doubled: {}", ctx.peek(doubled))); // => doubled: 2
-	/// // same as the first
+	/// // Same as the first
 	/// let deps = Manual { read: vec![doubled.erase_type()], write: Vec::new(), init_run: true };
 	/// Store::effect(ctx, None, deps, move |ctx| println!("doubled: {}", ctx.get(doubled))); // => doubled: 2
-	/// // in slab
+	/// // In slab
 	/// let deps = Manual { read: vec![doubled.erase_type()], write: Vec::new(), init_run: false };
 	/// Store::effect(ctx, Some(slab), deps, move |ctx| println!("doubled: {}", ctx.get(doubled))); // => doubled: 2
 	///
@@ -567,19 +566,19 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 
-	/// create a computed property.
+	/// Creates a computed property.
 	///
-	/// a computed property is a reactive property that is derived from a `fun`ction taking the [`Context`] and get reevaluated when its dependencies change.
+	/// A computed property is a reactive property derived from a `fun`ction that takes the [`Context`] and gets reevaluated whenever its dependencies change.
 	///
-	/// `computed` defines the property in a specific scope (global if `slab` is [`None`]), and return the property [`PropId`].
+	/// `computed` defines the property in a specific scope (global if `slab` is [`None`]) and returns the property's [`PropId`].
 	///
-	/// it takes the context and call `fun` on definition to set the property initial value, and to identifies the dependencies using [tracking](#tracking)
+	/// It takes the context and calls `fun` upon definition to set the property's initial value and to identify its dependencies using [tracking](#tracking).
 	///
-	/// it returns [`Error::Removed`] if the `slab` is removed.
+	/// It returns [`Error::Removed`] if the `slab` is removed.
 	///
-	/// this method is redirected by every [`ScopedStoreProv`](crate::ScopedStoreProv)ider in a more egornomic format.
+	/// This method is redirected by every [`ScopedStoreProv`](crate::ScopedStoreProv)ider into a more ergonomic format.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let count = store.prop(1);
 	/// let doubled = Store::computed(ctx, Some(slab), move |ctx| ctx.get(count) * 2);
@@ -608,7 +607,7 @@ impl<Ctx: Context> Store<Ctx> {
 		let TrackResult { read, written } = store.end_track().unwrap();
 
 		if !written.is_empty() {
-			panic!("computed properties can not write any properties");
+			panic!("computed properties cannot write to any properties");
 		}
 
 		let id = store.prop(value);
@@ -629,17 +628,17 @@ impl<Ctx: Context> Store<Ctx> {
 	}
 }
 
-/// <h2 id=slab-managment>Slab Managment</h2>
+/// <h2 id=slab-management>Slab Management</h2>
 ///
-/// the `Store` is composed of multiple independent scopes, each scope have its own lifetime shared accross its own items (properties and effects).
+/// The `Store` is composed of multiple independent scopes. Each scope has its own lifetime, which is shared across its items (properties and effects).
 ///
-/// the default scope the global scope that spans the entire `Store` lifetime.
+/// The default scope is the global scope, which spans the entire `Store`'s lifetime.
 ///
-/// the other kinds are slabs that are scopes identified with [`SlabId`] and can be removed when needed.
+/// The other kind consists of slabs, which are scopes identified by a [`SlabId`] and can be removed when needed.
 ///
-/// all effects dependent on properties inside slabs, they themself should be inside the shortest life slab, this because they would run while their dependencies are removed leading to panics.
+/// All effects that depend on properties inside slabs should themselves be placed inside the slab with the shortest lifetime. This prevents them from running after their dependencies have been removed, which would lead to panics.
 ///
-/// ## example
+/// ## Example
 /// ```
 /// let slab = store.create_slab();
 /// let count = store.prop_in(slab, 1);
@@ -649,9 +648,9 @@ impl<Ctx: Context> Store<Ctx> {
 /// assert!(!store.contains(count));
 /// ```
 impl<Ctx: Context> Store<Ctx> {
-	/// creates a slab, returning its [`SlabId`].
+	/// Creates a slab, returning its [`SlabId`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let slab = store.create_slab();
 	/// ```
@@ -662,16 +661,16 @@ impl<Ctx: Context> Store<Ctx> {
 		id
 	}
 
-	/// return a mutable reference to `SlabData`
+	/// Returns a mutable reference to `SlabData`.
 	fn slab(&mut self, slab: SlabId) -> &mut SlabData<Ctx> {
 		self.slabs.get_mut(&slab).unwrap()
 	}
 
-	/// check whether a slab is inside the `Store`.
+	/// Checks whether a slab exists inside the `Store`.
 	///
-	/// in some [circumstances](#remove-slab-note), a slab may be marked removed but its items are not.
+	/// In some [circumstances](#remove-slab-note), a slab may be marked as removed, but its items are not dropped yet.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let slab = store.create_slab();
 	/// assert!(store.has_slab(slab));
@@ -683,15 +682,15 @@ impl<Ctx: Context> Store<Ctx> {
 		self.slabs.contains_key(&slab) && !self.slabs_to_remove.contains(&slab)
 	}
 
-	/// remove the given slab.
+	/// Removes the given slab.
 	///
-	/// this methods will drop all the slab items and return [`Error::Removed`] if the given `slab` was previously removed.
+	/// This method will drop all of the slab's items and returns [`Error::Removed`] if the given `slab` was already removed.
 	///
-	/// <h4 id=remove-slab-note>note</h4>
+	/// <h4 id=remove-slab-note>Note</h4>
 	///
-	/// during updating inside effects, removed slabs will not be dropped instantly, instead they will be marked removed and will be removed when the updating end.
+	/// During updates inside effects, removed slabs will not be dropped instantly. Instead, they will be marked as removed and will be dropped when the update ends.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let slab = store.create_slab();
 	/// let count = store.prop_in(slab, 1);
@@ -706,14 +705,15 @@ impl<Ctx: Context> Store<Ctx> {
 		}
 
 		if store.updater.is_updating {
-			// since we would need to clean the current effect queue, and it is ineffecient and rarely necessary.
+			// since we would need to clean the current effect queue, which is inefficient and rarely necessary.
 			store.slabs_to_remove.push(id);
 		} else {
 			Store::drop_slab(ctx, id);
 		}
 		Ok(())
 	}
-	/// remove the slab for real
+
+	/// Removes the slab for real.
 	fn drop_slab(ctx: &mut Ctx, id: SlabId) {
 		while let Some(cleaner) = ctx.store().slab(id).cleaner.pop() {
 			cleaner(ctx)
@@ -730,15 +730,15 @@ impl<Ctx: Context> Store<Ctx> {
 
 /// <h2 id=updating>Updating</h2>
 ///
-/// the `Store` use fine grained reactivity to update only the required parts and runs the minimal amount of effects.
+/// The `Store` uses fine-grained reactivity to update only the required parts and runs the minimal number of effects.
 ///
-/// mutates to properties through [`write`](Store::write), [`update`](Store::update) and [`read_mut`](Store::read_mut) marks the properties dirty and queue them, then a call to [`flush_updates`](Store::flush_updates) takes the owner [`Context`] and pass it to the effects.
+/// Mutations to properties through [`write`](Store::write), [`update`](Store::update), and [`read_mut`](Store::read_mut) mark the properties as dirty and queue them. A subsequent call to [`flush_updates`](Store::flush_updates) takes the owning [`Context`] and passes it to the effects.
 ///
-/// effects are gathered and executed in undefined order, however it is graduated that each effects get executed once if it is effected, and after all of its read dependencies being finilized after the last effect writing to them being executed.
+/// Effects are gathered and executed in an undefined order. However, it is guaranteed that each affected effect gets executed exactly once, and only after all of its read dependencies have been finalized (i.e., after the last effect writing to them has executed).
 ///
-/// effects can effect other effects through their write dependencies, and the effect graph can be any graph that is not cyclic.
+/// Effects can affect other effects through their write dependencies. The effect graph can be any acyclic graph.
 ///
-/// # example
+/// # Example
 /// ```
 /// let a = store.prop(1);
 /// let b = store.prop(1);
@@ -759,27 +759,27 @@ impl<Ctx: Context> Store<Ctx> {
 /// });
 ///
 /// store.write(a, 2);
-/// Store::flush_updates(ctx); // all run exacly once
+/// Store::flush_updates(ctx); // All run exactly once
 /// assert!(matches!(store.get(d), 5 | 6));
 /// ```
 ///
-/// <h3 id=conditional-updates> conditional updates</h3>
+/// <h3 id=conditional-updates>Conditional Updates</h3>
 ///
-/// the effects graph is static, the same effects will be run even if the written value is the same, the specified write dependencies didnt get mutated and even if other non specified properties are mutated.
+/// The effect graph is static: the same effects will run even if the written value hasn't changed, the specified write dependencies weren't actually mutated, or other unspecified properties are mutated.
 ///
-/// for conditional mutation inside effects use [force_update](Store::force_update) that queue the given properties to the end of the current effect batch, where the `Store` will regather and run the required effects, repeating this till no more dirty property.
+/// For conditional mutations inside effects, use [`force_update`](Store::force_update). This queues the given properties at the end of the current effect batch. The `Store` will then regather and run the required effects, repeating this process until there are no more dirty properties.
 ///
-/// this can cause effects being run more than once in rare cases, and endless loops in extreme ones.
+/// This can cause effects to run more than once in rare cases, and can lead to endless loops in extreme ones.
 ///
-/// # example
+/// # Example
 /// ```
 ///	let a = store.prop(1);
 /// let b = store.prop(1);
 ///
 /// let mut old = store.get(a);
-/// let deps = EffectDeps::Manual { read: Vec::new(), written: Vec::new(), init_run: true };
+/// let deps = EffectDeps::Manual { read: Vec::new(), write: Vec::new(), init_run: true };
 /// Store::effect(ctx, None, deps, move |ctx| {
-/// 	if ctx.peek(a) != old {
+/// 	if ctx.peek(a) != &old {
 /// 		old = ctx.get(a);
 /// 		ctx.write(b, old + 1);
 /// 		ctx.store().force_update(b);
@@ -787,9 +787,9 @@ impl<Ctx: Context> Store<Ctx> {
 /// });
 /// ```
 impl<Ctx: Context> Store<Ctx> {
-	/// check whether the `Store` is executing effects.
+	/// Checks whether the `Store` is currently executing effects.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// assert!(!store.is_updating());
 	/// Store::effect(ctx, None, EffectDeps::Tracked, |ctx| assert!(ctx.store().is_updating()));
@@ -798,21 +798,21 @@ impl<Ctx: Context> Store<Ctx> {
 		self.updater.is_updating
 	}
 
-	/// mark a property as dirty to be updated.
+	/// Marks a property as dirty so it will be updated.
 	///
-	/// this method mark the the property as dirty recardless wether the `Store` is in updating or not.
+	/// This method marks the property as dirty regardless of whether the `Store` is currently updating.
 	///
-	/// this method is used in [conditional updates](#conditional-updates).
+	/// This method is used in [conditional updates](#conditional-updates).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	///	let a = store.prop(1);
 	/// let b = store.prop(1);
 	///
 	/// let mut old = store.get(a);
-	/// let deps = EffectDeps::Manual { read: Vec::new(), written: Vec::new(), init_run: true };
+	/// let deps = EffectDeps::Manual { read: Vec::new(), write: Vec::new(), init_run: true };
 	/// Store::effect(ctx, None, deps, move |ctx| {
-	/// 	if ctx.peek(a) != old {
+	/// 	if ctx.peek(a) != &old {
 	/// 		old = ctx.get(a);
 	/// 		ctx.write(b, old + 1);
 	/// 		ctx.store().force_update(b);
@@ -825,15 +825,15 @@ impl<Ctx: Context> Store<Ctx> {
 		}
 	}
 
-	/// respond to the currently pending updates.
+	/// Responds to the currently pending updates.
 	///
-	/// this method takes the owner [`Context`] and executes all the effects depended on the queued dirty properties.
+	/// This method takes the owning [`Context`] and executes all effects that depend on the queued dirty properties.
 	///
-	/// this method is safe to be called at any time, but a call when finishing using the [`Context`] is always enough.
+	/// This method is safe to call at any time, but calling it when you have finished using the [`Context`] is usually sufficient.
 	///
-	/// # example
+	/// # Example
 	/// ```
-	/// fn event_handler (input: u64) {
+	/// fn event_handler(input: u64) {
 	/// 	let ctx = get_ctx();
 	/// 	ctx.write(some_prop, input);
 	/// 	ctx.write(some_other_prop, input + 1);
@@ -855,11 +855,11 @@ impl<Ctx: Context> Store<Ctx> {
 
 /// <h2 id=tracking>Tracking</h2>
 ///
-/// tracking is a mechanism that allow to identify the properties used in a chunk of normal code without any extra syntax.
+/// Tracking is a mechanism that allows identifying the properties used in a chunk of normal code without any extra syntax.
 ///
-/// it starts with [`start_track`](Store::start_track), then every call to a [property access method](#property-access) record the target property as read or write, and at the end a call to [`end_track`](Store::end_track) retuns the recorded properties in a [`TrackResult`].
+/// It starts with [`start_track`](Store::start_track). Following that, every call to a [property access method](#property-access) records the target property as read or written. Finally, a call to [`end_track`](Store::end_track) returns the recorded properties in a [`TrackResult`].
 ///
-/// # example
+/// # Example
 /// ```
 /// let a = store.prop(1);
 /// let b = store.prop(2);
@@ -878,9 +878,9 @@ impl<Ctx: Context> Store<Ctx> {
 /// assert_eq!(written, [c.erase_type(), d.erase_type()]);
 /// ```
 impl<Ctx: Context> Store<Ctx> {
-	/// check whether tracking is activated.
+	/// Checks whether tracking is activated.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// assert!(!store.is_tracking());
 	/// store.start_track();
@@ -892,9 +892,9 @@ impl<Ctx: Context> Store<Ctx> {
 		self.tracking.borrow().is_some()
 	}
 
-	/// activate tracking.
+	/// Activates tracking.
 	///
-	/// returns [`Error::Tracking`] if tracking was activated before.
+	/// Returns [`Error::Tracking`] if tracking was already activated.
 	pub fn start_track(&self) -> Result<(), Error> {
 		if self.is_tracking() {
 			return Err(Error::Tracking);
@@ -903,9 +903,9 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 
-	/// stop tracking and return the [`TrackResult`].
+	/// Stops tracking and returns the [`TrackResult`].
 	///
-	/// returns [`Error::NotTracking`] if tracking was not activated before.
+	/// Returns [`Error::NotTracking`] if tracking was not previously activated.
 	pub fn end_track(&self) -> Result<TrackResult, Error> {
 		let mut result = self.tracking.take().ok_or(Error::NotTracking)?;
 
@@ -918,11 +918,11 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(result)
 	}
 
-	/// record a property as read while tracking.
+	/// Records a property as read while tracking.
 	///
-	/// it is noop while not tracking.
+	/// It is a no-op if tracking is not active.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let a = store.prop(1);
 	/// store.start_track();
@@ -935,19 +935,19 @@ impl<Ctx: Context> Store<Ctx> {
 		}
 	}
 
-	/// record a property as written while tracking.
-	// like that because in `get_mut` requires partial borrow
+	/// Records a property as written while tracking.
+	// done like this because `get_mut` requires a partial borrow.
 	fn _track_write<T: 'static>(tracking: &RefCell<Option<TrackResult>>, id: PropId<T>) {
 		if let Some(tracking) = tracking.borrow_mut().deref_mut() {
 			tracking.written.push(id.erase_type());
 		}
 	}
 
-	/// record a property as written while tracking.
+	/// Records a property as written while tracking.
 	///
-	/// it is noop while not tracking.
+	/// It is a no-op if tracking is not active.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let a = store.prop(1);
 	/// store.start_track();
@@ -959,15 +959,15 @@ impl<Ctx: Context> Store<Ctx> {
 	}
 }
 
-/// <h2 id=store-managment>Store Managment</h2>
+/// <h2 id=store-management>Store Management</h2>
 impl<Ctx: Context> Store<Ctx> {
-	/// add a cleaner function in a specific scope.
+	/// Adds a cleaner function to a specific scope.
 	///
-	/// a cleaner `fun`ction is a function get called with the owner [`Context`] when that scope is being dropped before dropping its items.
+	/// A cleaner `fun`ction is called with the owning [`Context`] when that scope is being dropped, right before dropping its items.
 	///
-	/// it add the cleaner to the global scope when `slab` is [`None`], and returns [`Error::Removed`] when the target `slab` is removed.
+	/// It adds the cleaner to the global scope when `slab` is [`None`], and returns [`Error::Removed`] if the target `slab` has been removed.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let slab = store.create_slab();
 	/// let child_slab = store.create_slab();
@@ -992,11 +992,11 @@ impl<Ctx: Context> Store<Ctx> {
 		Ok(())
 	}
 
-	/// a hook for [`Context`] dropping.
+	/// A hook for dropping the [`Context`].
 	///
-	/// `pre_drop` is a function that must be called during the owner [`Context`] dropping.
+	/// `pre_drop` is a function that must be called when the owning [`Context`] is being dropped.
 	///
-	/// it safely drop the `Store` and calls the [`cleaners`](Store::add_cleaner) for all scopes, starting from the slabs and end with the global scope.
+	/// It safely drops the `Store` and calls the [`cleaners`](Store::add_cleaner) for all scopes, starting with the slabs and ending with the global scope.
 	pub fn pre_drop(ctx: &mut Ctx) {
 		let store = ctx.store();
 		if store.is_dropped {

@@ -24,7 +24,7 @@ impl ToTokens for Path {
 }
 
 #[derive(Debug)]
-pub enum Node {
+pub enum Child {
 	Element(Element),
 	DoBlock(Vec<TokenTree>),
 	Content(Vec<TokenTree>),
@@ -40,13 +40,13 @@ pub enum Tag {
 pub struct Element {
 	pub tag: Tag,
 	pub attrs: Vec<(Vec<TokenTree>, Vec<TokenTree>)>,
-	pub children: Vec<Node>,
+	pub children: Vec<Child>,
 }
 
 #[derive(Debug)]
 pub struct ChunkInput {
 	pub build: Vec<TokenTree>,
-	pub nodes: Vec<Node>,
+	pub children: Vec<Child>,
 }
 
 pub fn try_parse_path(cur: &mut Cursor) -> Option<Path> {
@@ -64,12 +64,12 @@ pub fn try_parse_path(cur: &mut Cursor) -> Option<Path> {
 	Some(Path { leading_colon, segments })
 }
 
-fn parse_children(cur: &mut Cursor) -> Result<Vec<Node>, Error> {
+fn parse_children(cur: &mut Cursor) -> Result<Vec<Child>, Error> {
 	let mut children = Vec::new();
 	while !cur.is_end() {
 		if cur.try_kw("do") {
 			let block = cur.group(Brace)?;
-			children.push(Node::DoBlock(block.stream().into_iter().collect()));
+			children.push(Child::DoBlock(block.stream().into_iter().collect()));
 		} else if cur.test_kw("if") {
 			let mut block = Vec::new();
 			loop {
@@ -81,15 +81,15 @@ fn parse_children(cur: &mut Cursor) -> Result<Vec<Node>, Error> {
 					break;
 				}
 			}
-			children.push(Node::DoBlock(block))
+			children.push(Child::DoBlock(block))
 		} else if cur.test_kw("for") | cur.test_kw("match") {
 			let mut block = cur.eat_until(
 				|token| matches!(token, Token::Group(group) if group.delimiter() == Brace),
 			);
 			block.push(cur.group(Brace)?.into());
-			children.push(Node::DoBlock(block))
+			children.push(Child::DoBlock(block))
 		} else if let Some(el) = try_parse_el(cur)? {
-			children.push(Node::Element(el));
+			children.push(Child::Element(el));
 			if !match_punct!(cur.peek(), ',') {
 				continue;
 			}
@@ -98,7 +98,7 @@ fn parse_children(cur: &mut Cursor) -> Result<Vec<Node>, Error> {
 			if content.is_empty() {
 				return err!("expected an element, expression or a do block", cur.peek().span());
 			}
-			children.push(Node::Content(content));
+			children.push(Child::Content(content));
 		}
 		cur.try_punct(',');
 	}
@@ -174,5 +174,5 @@ pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
 		return err!("expected an element, expression or a do block", cur.peek().span());
 	}
 
-	Ok(ChunkInput { build: chunk, nodes })
+	Ok(ChunkInput { build: chunk, children: nodes })
 }

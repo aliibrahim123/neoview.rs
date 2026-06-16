@@ -90,6 +90,235 @@ pub mod docs {
 	pub mod render_integ;
 }
 
+/// construct a ui chunk in an expressive object like syntax.
+///
+/// `chunk` is a macro that defines and append a ui chunk to the given [build](docs::render_integ#build) in renderer defined universal expressive syntax.
+///
+/// `chunk` acts as a bridge, it parses a universal and raw element tree syntax into a series of [buildcodes](#buildcodes), these buildcodes are defined by the renderer who futher refine and restrict the syntax by them.
+///
+/// `chunk` allow the same expressive syntax to be universal between all renderers, however each renderer has the right to interpret and refine the syntax to its needs.
+///
+/// `chunk` is not the only way of templating, the renderer can provide additional ways of templating.
+///
+/// # Example
+/// ```
+/// // using neoview-web
+/// chunk!(build, div {
+/// 	h1 { "counter" }
+/// 	do {
+/// 		let count = build.prop(0);
+/// 		chunk!(build, button(
+/// 			on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
+/// 		) { "count: ", count });
+/// 	}
+/// });
+/// ```
+/// # syntax
+/// This section uses the [gramex meta language](https://docs.rs/gramex/latest/gramex/docs/gram_ref/index.html).
+/// ### `chunk` arguments.
+/// ```text
+/// let chunk_args = (build = expr) "," children;
+/// ```
+/// the `chunk` takes 2 arguments, a `build` expression of type defined by the renderer, and a list of children appended to the build at the target point.
+///
+/// ### children
+/// ```text
+/// let children = (child_opt_comma | child_req_comma) (","? child_opt_comma | "," child_req_comma)* ","?;
+/// let child_opt_comma = element | do_block;
+/// let child_req_comma = content;
+/// ```
+///
+/// the chunk syntax is an element children tree, where childrens are items that can be an element child.
+///
+/// comma is used to separate childrens, some have it optional ([elements](#element) and [do blocks](#do-block)), others requires it ([contents](#content)), a trailing comma is allowed.
+///
+/// ```
+/// chunk!(build,
+/// 	el {} do {} "content", "other content", el {}
+/// 	// same as
+/// 	el {}, do {}, "content", "other content", el {},
+/// );
+/// ```
+///
+/// ### element
+/// ```text
+/// let element = (tag = path | str_lit) (attrs | body | attrs body);
+/// let attrs = "(" list<ident | _+ ":" _+, ",">? ","? ")";
+/// let body = "{" children? "}";
+/// ```
+/// an element is a ui element defined by a tag and can have attributes, children or both.
+///
+/// tag can be a [path](https://doc.rust-lang.org/reference/paths.html#simple-paths) or a string literal.
+///
+/// attributes is a comma separated list of `name: value` pairs enclosed inside paranthesis (`()`), where name and value can be any token list not containing `,` or `:`.
+///
+/// a single identifier can be used as attr in case both name and value are the same identifier.
+///
+/// body is a curly (`{}`) block optionally containing children.
+///
+/// tags, attributes names and values are made raw to support any renderer, the renderer will further restrict and refine them for his needs.
+///
+/// ```
+/// chunk!(build,
+/// 	el(attr1: value, attr2)
+/// 	ns::el { "content", child {} }
+/// 	"some-el"(ns.attr: (|a, b| a + b)) { "content" }
+/// );
+/// ```
+///
+/// ### do block
+/// ```text
+/// let do_block =
+///     "do" "{" _* "}" | "for" _+ "{" _* "}" | "match" _+ "{" _* "}" |
+///     "if" _+ "{" _* "}" ("else" _+ "{" _* "}")*
+/// ;
+/// ```
+/// do blocks are expression blocks that are evaluated when the execution reach where the block is defined inside the tree.
+///
+/// they are a unique feature to neocomp that allow to inline the logic with its ui and separate the ui into multiple nested chunks.
+///
+/// do blocks are defined as `do` followed by an expression block, there are direct shorthand for `if`, `for` and `match` expressions.
+///
+/// note: do blocks and their shorthands are static and not dynamic, for the dynamic versions see your renderer's documentation.
+///
+/// ```
+/// chunk!(build, div {
+/// 	"after this",
+/// 	do {
+///			let count = build.prop(0);
+/// 		chunk!(build, button(
+/// 			on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
+/// 		) { "count: ", count });
+/// 	}
+/// 	"before this",
+///
+/// 	for name in 'a'..'z' {
+///			chunk!(build, div { name });
+/// 	}
+/// 	if a > b {
+/// 		"greater"
+/// 	} else {
+/// 		"less"
+/// 	}
+/// 	match nb {
+/// 		1 => "one",
+/// 		2 => "two",
+/// 		_ => "other",
+/// 	}
+/// });
+/// ```
+///
+/// ### content
+/// ```text
+/// let content = _+;
+/// ```
+/// content is any token list that is not an element or a do block.
+///
+/// it can be a string literial, and expression or any other token list defined by the renderer.
+///
+/// ```
+/// chunk!(build, "content", variable, 1 + 1, [1, 2, 3], move |ctx| ctx.get(prop));
+/// ```
+///
+/// # buildcodes
+/// this section is meant for renderers maintainers.
+///
+/// the `chunk` macro transform the element tree into a series of calls to buildcodes.
+///
+/// buildcodes are macros defined inside a module called `__buildcode` inside the caller scope.
+///
+/// ### chunk buildcodes
+/// ```
+/// macro_rules! start_chunk {
+/// 	($build:expr) => { el:expr }
+/// }
+/// macro_rules! end_chunk {
+/// 	($build:expr, $el:expr) => {}
+/// }
+/// ```
+///
+/// `chunk` starts by storing the `build` argument into a local variable, to pass it to all buildcodes in the `build` argument.
+///
+/// then it calls `start_chunk` to adjust the build and returns the parent element of the top point.
+///
+/// then it calls buildcodes of the top children.
+///
+/// finaly it calls `end_chunk` with the parent element of the top point to end the chunk.
+///
+/// ### element buildcodes
+/// ```
+/// macro_rules! start_el {
+/// 	($build:build, $el:expr, $($tag:tt)+) => { $el:expr };
+/// }
+/// macro_rules! attr {
+/// 	($build:build, $el:expr, [$($name:tt)+], $($value:tt)+) => { };
+/// }
+/// macro_rules! end_el {
+/// 	($build:build, $parent:expr, $el:expr, $($tag:tt)+) => { $el:expr };
+/// }
+/// ```
+/// an element is tranformed into call to `start_el` with the tag tokens and the parent element to returns the new element.
+///
+/// then attributes are transformed into calls to `attr` with the name and value tokens, and the element.
+///
+/// then calls to children buildcodes.
+///
+/// finally a call to `end_el` with the parent element, the new element and the tag tokens.
+///
+/// elements type is left to the renderer, and it can be a `()` if not needed.
+///
+/// ### content buildcode
+/// ```
+/// macro_rules! content {
+/// 	($build:build, $el:expr, $($content:tt)+) => { };
+/// }
+/// ```
+/// `content` is called for every content with the element and the content tokens.
+///
+/// ### do block buildcodes
+/// ```
+/// macro_rules! start_do_block {
+/// 	($build:build, $el:expr) => { };
+/// }
+/// macro_rules! end_do_block {
+/// 	($build:build, $el:expr) => { };
+/// }
+/// ```
+/// `start_do_block` and `end_do_block` are called for every do block with the element.
+///
+/// a do block is transformed into an expression block of a call to `start_do_block`, the the block contents then a call to `end_do_block`.
+///
+/// ### example
+/// ```
+/// chunk!(build, div {
+/// 	span(id: "hello") { "world" }
+/// 	do { println!("hello") }
+/// });
+///
+///	/// will be transformed into something like
+/// {
+/// 	let mut build = build;
+/// 	let mut el = __buildcode::start_chunk!(build);
+///		let mut child = {
+/// 		let mut el = __buildcode::start_el!(build, el, div);
+/// 		let mut child = {
+///				let el = __buildcode::start_el!(build, el, span);
+///				__buildcode::attr!(build, el, [id], hello);
+///				__buildcode::content!(build, el, "world");
+/// 			el
+///			}
+///			__buildcode::end_el!(build, el, child, span);
+/// 		{
+/// 			__buildcode::start_do_block!(build, el);
+/// 			println!("hello");
+/// 			__buildcode::end_do_block!(build, el);
+/// 		}
+/// 		el
+///		};
+/// 	__buildcode::end_el!(build, el, child, div);
+/// 	__buildcode::end_chunk!(build, el);
+/// }
+/// ```
 pub use neoview_macro::chunk;
 
 pub use {

@@ -1,15 +1,15 @@
-//! define [`Context`] and [`StoreProv`] family.
+//! Defines the [`Context`] and [`StoreProv`] family.
 use crate::{PropId, SlabId, Store, store::EffectDeps};
 
-/// a type that owns the ui.
+/// A type that owns the UI.
 ///
-/// the `Context` is the root of the ui system that manages everything from rendering, reactivity and bindings, it is the one owner that with its drop the whole ui is destroyed.
+/// The `Context` is the root of the UI system that manages everything from rendering, reactivity, and bindings. It is the single owner that destroys the entire UI when it is dropped.
 ///
-/// every interaction with ui and its reactive system requires a mutable access to the `Context`, for that the `Context` is borrowed and passed around for short periods of time every time an interaction occurs.
+/// Every interaction with the UI and its reactive system requires mutable access to the `Context`. Therefore, the `Context` is borrowed and passed around for short periods of time whenever an interaction occurs.
 ///
-/// other than the phelosophy of context passing and ownership, and being real ui systems, neocomp requires from `Context`s to be a [`GlobalStoreProv`] that exposes its [`Store`] through [`StoreProv::store`] and [`StoreProv::store_ref`].
+/// Beyond the philosophy of context passing and ownership, `neocomp` requires `Context`s to implement [`GlobalStoreProv`], which exposes its [`Store`] through [`StoreProv::store`] and [`StoreProv::store_ref`].
 ///
-/// # example
+/// # Example
 /// ```
 /// struct SomeContext(Store<Self>);
 /// impl Context for SomeContext {}
@@ -24,31 +24,31 @@ use crate::{PropId, SlabId, Store, store::EffectDeps};
 /// ```
 pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
 
-/// a type that provides access to a [`Store`].
+/// A type that provides access to a [`Store`].
 ///
-/// the `StoreProv`ider is a trait that redirect the common methods of the [`Store`] ([`read`](Store::read), [`get`](Store::get), [`write`](Store::write), ...) the implementer wraps.
+/// The `StoreProv` trait redirects the common methods of the wrapped [`Store`] (such as [`read`](Store::read), [`get`](Store::get), and [`write`](Store::write)) for better ergonomics.
 ///
 /// ```
-/// let count = provider.ctx.store.prop(1);
-/// assert!(provider.ctx.store.read(count), 1);
-/// provider.ctx.store.write(count, 2);
-/// assert!(provider.ctx.store.get(count), 2);
-/// provider.ctx.store.update(count, |v| *v += 1);
-/// assert!(provider.ctx.store.peek(count), 3);
+/// let count = provider.ctx().store().prop(1);
+/// assert_eq!(provider.ctx().store().read(count), &1);
+/// provider.ctx().store().write(count, 2);
+/// assert_eq!(provider.ctx().store().get(count), 2);
+/// provider.ctx().store().update(count, |v| *v += 1);
+/// assert_eq!(provider.ctx().store().peek(count), &3);
 ///
 /// // vs
 /// let count = provider.prop(1);
-/// assert!(provider.read(count), 1);
+/// assert_eq!(provider.read(count), &1);
 /// provider.write(count, 2);
-/// assert!(provider.get(count), 2);
+/// assert_eq!(provider.get(count), 2);
 /// provider.update(count, |v| *v += 1);
-/// assert!(provider.peek(count), 3);
+/// assert_eq!(provider.peek(count), &3);
 /// ```
 ///
-/// to gain this ability, the implementer must provide access to its [`Context`] though [`ctx`](StoreProv::ctx) and [`ctx_ref`](StoreProv::ctx_ref).
+/// To gain this ability, the implementer must provide access to its [`Context`] through [`ctx`](StoreProv::ctx) and [`ctx_ref`](StoreProv::ctx_ref).
 ///
 /// ```
-/// struct Provider<'a>(&mut 'a SomeContext).
+/// struct Provider<'a>(&'a mut SomeContext);
 /// impl<'a> StoreProv for Provider<'a> {
 /// 	type Ctx = SomeContext;
 /// 	fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
@@ -56,49 +56,49 @@ pub trait Context: Sized + GlobalStoreProv<Ctx = Self> {}
 /// }
 /// ```
 ///
-/// this trait redirects the [property access methods](Store#property-access), for item definition redirection, see [`ScopedStoreProv`] supertrait.
+/// This trait redirects the [property access methods](Store#property-access). For item definition redirection, see the [`ScopedStoreProv`] trait.
 pub trait StoreProv {
-	/// the [`Context`] containing the provided [`Store`].
+	/// The [`Context`] containing the provided [`Store`].
 	type Ctx: Context;
-	/// return a mutable reference to the [`Context`].
+	/// Returns a mutable reference to the [`Context`].
 	///
-	/// generaly it is enough to implement this along with [`ctx_ref`](Self::ctx_ref) when implementing `StoreProv`.
+	/// Generally, it is sufficient to implement this along with [`ctx_ref`](Self::ctx_ref) when implementing `StoreProv`.
 	fn ctx(&mut self) -> &mut Self::Ctx;
-	/// return a reference to the [`Context`].
+	/// Returns a reference to the [`Context`].
 	///
-	/// generaly it is enough to implement this along with [`ctx`](Self::ctx) when implementing `StoreProv`.
+	/// Generally, it is sufficient to implement this along with [`ctx`](Self::ctx) when implementing `StoreProv`.
 	fn ctx_ref(&self) -> &Self::Ctx;
-	/// return a mutable reference to the provided [`Store`].
+	/// Returns a mutable reference to the provided [`Store`].
 	///
-	/// it has a default implementation that uses `StoreProv::store(self.ctx())`, overide it if necessary.
+	/// It has a default implementation that uses `self.ctx().store()`, override it if necessary.
 	fn store(&mut self) -> &mut Store<Self::Ctx> {
 		self.ctx().store()
 	}
-	/// return a reference to the provided [`Store`].
+	/// Returns a reference to the provided [`Store`].
 	///
-	/// it has a default implementation that uses `StoreProv::store_ref(self.ctx_ref())`, overide it if necessary.
+	/// It has a default implementation that uses `self.ctx_ref().store_ref()`, override it if necessary.
 	fn store_ref(&self) -> &Store<Self::Ctx> {
 		self.ctx_ref().store_ref()
 	}
 
-	/// return a reference to a reactive property value.
+	/// Returns a reference to a reactive property's value.
 	///
-	/// this method redirect [`Store::read`].
+	/// This method redirects [`Store::read`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
-	/// assert_eq!(provider.read(nb), 1);
+	/// assert_eq!(provider.read(nb), &1);
 	/// ```
 	fn read<T: 'static>(&self, id: PropId<T>) -> &T {
 		self.store_ref().read(id)
 	}
 
-	/// return a copy of a [`Copy`]able reactive property value.
+	/// Returns a copy of a [`Copy`]able reactive property's value.
 	///
-	/// this method redirect [`Store::get`].
+	/// This method redirects [`Store::get`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
 	/// assert_eq!(provider.get(nb), 1);
@@ -107,38 +107,38 @@ pub trait StoreProv {
 		self.store_ref().get(id)
 	}
 
-	/// return a reference to a reactive property value without being tracked.
+	/// Returns a reference to a reactive property's value without tracking it.
 	///
-	/// this method redirect [`Store::peek`].
+	/// This method redirects [`Store::peek`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
-	/// assert_eq!(provider.peek(nb), 1);
+	/// assert_eq!(provider.peek(nb), &1);
 	/// ```
 	fn peek<T: 'static>(&self, id: PropId<T>) -> &T {
 		self.store_ref().peek(id)
 	}
 
-	/// return a mutable reference to a reactive property value.
+	/// Returns a mutable reference to a reactive property's value.
 	///
-	/// this method redirect [`Store::read_mut`].
+	/// This method redirects [`Store::read_mut`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let arr = provider.prop(vec![1, 2, 3]);
-	/// provider.get_mut(arr)[2] = 4;
-	/// assert_eq!(provider.read(arr), [1, 2, 4]);
+	/// provider.read_mut(arr)[2] = 4;
+	/// assert_eq!(provider.read(arr), &[1, 2, 4]);
 	/// ```
 	fn read_mut<T: 'static>(&mut self, id: PropId<T>) -> &mut T {
 		self.store().read_mut(id)
 	}
 
-	/// set a reactive property value.
+	/// Sets a reactive property's value.
 	///
-	/// this method redirect [`Store::write`].
+	/// This method redirects [`Store::write`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
 	/// provider.write(nb, 2);
@@ -148,11 +148,11 @@ pub trait StoreProv {
 		self.store().write(id, value)
 	}
 
-	/// update a reactive property using an updater function.
+	/// Updates a reactive property using an updater function.
 	///
-	/// this method redirect [`Store::update`].
+	/// This method redirects [`Store::update`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
 	/// provider.update(nb, |v| *v += 1);
@@ -163,28 +163,28 @@ pub trait StoreProv {
 	}
 }
 
-/// [`StoreProv`] with a specifc scope.
+/// A [`StoreProv`] with a specific scope.
 ///
-/// the `ScopedStoreProv` is a supertrait of [`StoreProv`] that further redirect the item definition methods ([`prop`](Store::prop), [`effect`](Store::effect), [`computed`](Store::computed)) from the provided [`Store`].
+/// The `ScopedStoreProv` is a trait that extends [`StoreProv`] by further redirecting the item definition methods ([`prop`](Store::prop), [`effect`](Store::effect), and [`computed`](Store::computed)) from the provided [`Store`].
 ///
 /// ```
-/// let nb = provider.ctx.store.prop_in(Some(provider.slab), 1);
-/// Store::effect(provider.ctx, Some(provider.slab), EffectDeps::Tracked,
-/// 	move |ctx| println!("nb: ", ctx.store.get(nb))
+/// let nb = provider.ctx().store().prop_in(Some(provider.slab()), 1);
+/// Store::effect(provider.ctx(), Some(provider.slab()), EffectDeps::Tracked,
+/// 	move |ctx| println!("nb: {}", ctx.store().get(nb))
 /// );
-/// let doubled = Store::computed(provider.ctx, Some(provider.slab),
-/// 	move |ctx| ctx.store.get(nb) * 2
+/// let doubled = Store::computed(provider.ctx(), Some(provider.slab()),
+/// 	move |ctx| ctx.store().get(nb) * 2
 /// );
 ///
 /// // vs
 /// let nb = provider.prop(1);
-/// provider.effect(move |ctx| println!("nb: ", ctx.get(nb)));
+/// provider.effect(move |ctx| println!("nb: {}", ctx.get(nb)));
 /// let doubled = provider.computed(move |ctx| ctx.get(nb) * 2);
 /// ```
 ///
-/// to gain this ability, the implementer must specifies its scope through [`slab`](ScopedStoreProv::slab).
+/// To gain this ability, the implementer must specify its scope through [`slab`](ScopedStoreProv::slab).
 /// ```
-/// struct Provider<'a>(&mut 'a SomeContext, SlabId).
+/// struct Provider<'a>(&'a mut SomeContext, SlabId);
 /// impl<'a> StoreProv for Provider<'a> {
 /// 	type Ctx = SomeContext;
 /// 	fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
@@ -195,16 +195,16 @@ pub trait StoreProv {
 /// }
 /// ```
 pub trait ScopedStoreProv: StoreProv {
-	/// return the [`SlabId`] of the slab the provider is scoped to.
+	/// Returns the [`SlabId`] of the slab the provider is scoped to.
 	///
-	/// its return value must always be the same and exist in the [`Store`], it can be [`None`] for global scope.
+	/// Its return value must always be the same and must exist in the [`Store`]; it can be [`None`] for the global scope.
 	fn slab(&self) -> Option<SlabId>;
 
-	/// defines a new reactive property in the provider scope.
+	/// Defines a new reactive property in the provider's scope.
 	///
-	/// this method redirect [`Store::prop_in`].
+	/// This method redirects [`Store::prop_in`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
 	/// assert_eq!(provider.get(nb), 1);
@@ -214,28 +214,28 @@ pub trait ScopedStoreProv: StoreProv {
 		self.store().prop_in(slab, value).unwrap()
 	}
 
-	/// defines an effect in the provider scope.
+	/// Defines an effect in the provider's scope.
 	///
-	/// this method redirect [`Store::effect`] with [`deps: EffectDeps::Tracked`](EffectDeps::Tracked).
+	/// This method redirects [`Store::effect`] with [`deps: EffectDeps::Tracked`](EffectDeps::Tracked).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
-	/// provider.effect(move |ctx| println!("nb: ", ctx.get(nb)));
+	/// provider.effect(move |ctx| println!("nb: {}", ctx.get(nb)));
 	/// ```
 	fn effect(&mut self, fun: impl FnMut(&mut Self::Ctx) + 'static) {
 		let slab = self.slab();
 		Store::effect(self.ctx(), slab, EffectDeps::Tracked, fun).unwrap();
 	}
 
-	/// defines an effect in the provider scope, with manual dependencies.
+	/// Defines an effect in the provider's scope with manual dependencies.
 	///
-	/// this method redirect [`Store::effect`] with [`deps: EffectDeps::Manual { init_run: true }`](EffectDeps::Manual).
+	/// This method redirects [`Store::effect`] with [`deps: EffectDeps::Manual { init_run: true }`](EffectDeps::Manual).
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
-	/// provider.effect_manual(vec![nb.erase_type()], vec![], move |ctx| println!("nb: ", ctx.get(nb)));
+	/// provider.effect_manual(vec![nb.erase_type()], vec![], move |ctx| println!("nb: {}", ctx.get(nb)));
 	/// ```
 	fn effect_manual(
 		&mut self, read: Vec<PropId<()>>, write: Vec<PropId<()>>,
@@ -246,11 +246,11 @@ pub trait ScopedStoreProv: StoreProv {
 			.unwrap();
 	}
 
-	/// create a computed property in the provider scope.
+	/// Creates a computed property in the provider's scope.
 	///
-	/// this method redirect [`Store::computed`].
+	/// This method redirects [`Store::computed`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let nb = provider.prop(1);
 	/// let doubled = provider.computed(move |ctx| ctx.get(nb) * 2);
@@ -264,12 +264,12 @@ pub trait ScopedStoreProv: StoreProv {
 	}
 }
 
-/// [`ScopedStoreProv`] specilized for the global scope.
+/// A [`ScopedStoreProv`] specialized for the global scope.
 ///
-/// `GlobalStoreProv` is a marker trait that automatically implementes [`ScopedStoreProv`] of the global scope for the implementer [`StoreProv`].
+/// `GlobalStoreProv` is a marker trait that automatically implements [`ScopedStoreProv`] for the global scope on the implementing [`StoreProv`].
 ///
 /// ```
-/// struct Provider<'a>(&mut 'a SomeContext, SlabId).
+/// struct Provider<'a>(&'a mut SomeContext);
 /// impl<'a> StoreProv for Provider<'a> {
 /// 	type Ctx = SomeContext;
 /// 	fn ctx(&mut self) -> &mut Self::Ctx { self.0 }
