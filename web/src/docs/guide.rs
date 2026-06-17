@@ -1,7 +1,7 @@
-//! # introduction
-//! `neoview-web` apps are compiled as wasm files, it is required to see the [`wasm-bindgen` introduction](https://wasm-bindgen.github.io/wasm-bindgen/) before continuing.
+//! # Introduction
+//! `neoview-web` apps are compiled as WebAssembly (Wasm) files. It is recommended to read the [`wasm-bindgen` introduction](https://wasm-bindgen.github.io/wasm-bindgen/) before continuing.
 //!
-//! here is an example `Cargo.toml`:
+//! Here is an example `Cargo.toml`:
 //! ```toml
 //! [package]
 //! name = "example"
@@ -20,7 +20,7 @@
 //! }
 //! ```
 //!
-//! here is an minimal example `lib.rs`:
+//! Here is a minimal example `lib.rs`:
 //! ```
 //! use neoview_web::prelude::*;
 //! use wasm_bindgen::prelude::wasm_bindgen;
@@ -45,16 +45,16 @@
 //! }
 //! ```
 //!
-//! this may look like a lot of code, but it is just the init code, the rest of the code is more ergonomic.
+//! This may look like a lot of code, but it is just the initialization code, the rest of the code is much more ergonomic.
 //!
-//! first let starts with.
+//! First, let's start with:
 //!
 //! # [`DomContext`]
-//! unlike other web frameworks that favor magic and ergonomics and provide bery unverbose api, `neoview-web` and every `neoview` framework favors middle ground robustness and safety.
+//! Unlike other web frameworks that favor magic and ergonomics by providing a very concise API, `neoview-web` and the entire `neoview` ecosystem favor a middle ground of robustness and safety.
 //!
-//! in `neoview-web`, ui has clear owenership model, all the ui is owned by one struct called [`DomContext`], all interactions with the ui is through the [`DomContext`], and the ui is dropped when the [`DomContext`] is dropped.
+//! In `neoview-web`, the UI has a clear ownership model. All of the UI is owned by a single struct called [`DomContext`]. All interactions with the UI occur through this [`DomContext`], and the UI is dropped when the [`DomContext`] is dropped.
 //!
-//! this one struct will be passed by mutable reference from one place to another through out your program, dont be afraid, it is just one argument named `ctx` with no lifetime nightmare as every ananymous type is [`Copy`].
+//! This single struct will be passed by mutable reference from one place to another throughout your program. Do not be afraid, it is just one argument named `ctx` with no lifetime nightmares, as every anonymous type is [`Copy`].
 //!
 //! ```
 //! // functions will be like
@@ -63,23 +63,23 @@
 //! }
 //! ```
 //!
-//! generally, one [`DomContext`] will be created at the main function, it is created with [`DomContext::new`] that requires the root element and a [`CtxOptions`] (just pass `Default::default()` and you are fine).
+//! Generally, a single [`DomContext`] will be created in the main function. It is created with [`DomContext::new`], which requires the root element and a [`CtxOptions`] (just passing `Default::default()` is fine).
 //!
-//! [`DomContext::new`] returns a [`CtxHandle`] that is a wrapper over [`DomContext`] that needs to be kept alive for the duration of the ui, just call [`std::mem::forget`] on it and forget like it.
+//! [`DomContext::new`] returns a [`CtxHandle`], which is a wrapper around [`DomContext`] that needs to be kept alive for the duration of the UI. Just call [`std::mem::forget`] on it and forget about it.
 //!
-//! # reactivity
-//! reactivity is essintial to every ui framework, and `neoview-web` is no different.
+//! # Reactivity
+//! Reactivity is essential to every UI framework, and `neoview-web` is no different.
 //!
-//! `neoview-web` uses fine grained reactivity to update only the required parts of the ui, however they are no signals, only old school property access and mutation.
+//! `neoview-web` uses fine-grained reactivity to update only the required parts of the UI. However, there are no signals, only old-school property access and mutation.
 //!
-//! we all love signals, however they requires heavy infrastructure and comes with unregulated lifetimes, however plain old property access method is only few character longer and it is so much more robust.
+//! We all love signals, but they require heavy infrastructure and come with unregulated lifetimes. In contrast, the plain old property access method is only a few characters longer and is much more robust.
 //!
-//! [`prop`](Store::prop) creates reactive property that are identified by a [`Copy`]able [`PropId`], and methods like [`read`](Store::read), [`write`](Store::write), [`get`](Store::get), and [`update`](Store::update) are used to access and mutate properties.
+//! [`prop`](Store::prop) creates a reactive property that is identified by a [`Copy`]able [`PropId`], and methods like [`read`](Store::read), [`write`](Store::write), [`get`](Store::get), and [`update`](Store::update) are used to access and mutate properties.
 //!
-//! - [`read`](Store::read): returns a reference to a reactive property's value.
-//! - [`write`](Store::write): writes to a reactive property's value.
-//! - [`get`](Store::get): returns a copy of a reactive property's value.
-//! - [`update`](Store::update): updates a reactive property with an updater function.
+//! - [`read`](Store::read): Returns a reference to a reactive property's value.
+//! - [`write`](Store::write): Writes to a reactive property's value.
+//! - [`get`](Store::get): Returns a copy of a reactive property's value.
+//! - [`update`](Store::update): Updates a reactive property with an updater function.
 //!
 //! ```
 //! let nb = ctx.prop(1);
@@ -90,9 +90,9 @@
 //! println!("nb: {}", ctx.read(nb)); // => nb: 3
 //! ```
 //!
-//! note that not only the [`DomContext`] provides these methods, but most the types you work with also provides these methods through the [`StoreProv`] trait.
+//! Note that not only does the [`DomContext`] provide these methods, but most of the types you work with also provide them through the [`StoreProv`] trait.
 //!
-//! reactive code that need to be executed everytime some properties change are put inside [`effect`s](Store::effect), effects properties are known implicitly (if they are always the same), and the [`DomContext`] is passed to the effects, letting you relax and focus on your code.
+//! Reactive code that needs to be executed every time some properties change is put inside [`effect`s](Store::effect). An effect's properties are identified implicitly (if they are always the same), and the [`DomContext`] is passed to the effects, allowing you to relax and focus on your code.
 //!
 //! ```
 //! let nb = ctx.prop(1);
@@ -100,29 +100,29 @@
 //! ctx.write(nb, 2); // => nb: 2
 //! ```
 //!
-//! there are also [`computed` properties](Store::computed) that are derived from other properties based on a reactive expression, they also have the same ergonomics like effects.
+//! There are also [`computed` properties](Store::computed) that are derived from other properties based on a reactive expression; they offer the same ergonomics as effects.
 //! ```
 //! let nb = ctx.prop(1);
 //! let doubled = ctx.computed(move |ctx| ctx.get(nb) * 2);
 //! println!("doubled: {}", ctx.get(doubled)); // => doubled: 2
 //! ```
 //!
-//! note that effects dont get executed quickly on calls to [`write`](Store::write), instead they get queued and executed when [`flush_updates`](Store::flush_updates) is called, though most of the times the framework does it for you.
+//! Note that effects do not execute immediately upon calls to [`write`](Store::write). Instead, they get queued and executed when [`flush_updates`](Store::flush_updates) is called, though most of the time the framework handles this for you.
 //!
-//! and now after you had understand the reactivity primitives, let starts with the ui.
+//! Now that you understand the reactivity primitives, let's start with the UI.
 //!
-//! # ui contruction
-//! when you create your [`DomContext`], you starts ui construction by creating a chunk with [`DomContext::root_chunk`], then using [`chunk`](macro@chunk) macro recusively to contruct the ui, finally commit the ui with [`ChunkBuild::build`].
+//! # UI Construction
+//! When you create your [`DomContext`], you start UI construction by creating a chunk with [`DomContext::root_chunk`], then using the [`chunk`](macro@chunk) macro recursively to construct the UI, and finally committing the UI with [`ChunkBuild::build`].
 //!
-//! ui in `neoview-web` like other fine grained reactivity framework is builted initialy once and updates flow directly to specific elements using fine-grained reactivity.
+//! The UI in `neoview-web`, like in other fine-grained reactive frameworks, is initially built once, and updates flow directly to specific elements using fine-grained reactivity.
 //!
-//! however istead of having ui as expressions defined at the end of the functions, the ui in `neoview-web` is constructed in multiple chunks, where the [`ChunkBuild`] uses the builder pattern but instead of raw draw calls, you define entire chunks of ui.
+//! However, instead of having the UI as expressions defined at the end of functions, the UI in `neoview-web` is constructed in multiple chunks. The [`ChunkBuild`] uses the builder pattern, but instead of raw draw calls, you define entire chunks of UI.
 //! ```
 //! chunk!(build, div { "part 1" });
 //! chunk!(build, div { "part 2" });
 //! ```
 //!
-//! a result of this approuch is that you can inline the logic directly to the ui, and you can use functions of whatever sizes as logic and ui can interleave.
+//! A result of this approach is that you can inline logic directly into the UI, and you can use functions of any size, allowing logic and UI to interleave seamlessly.
 //! ```
 //! // section 1
 //! let count = ctx.prop(0);
@@ -134,7 +134,7 @@
 //! chunk!(build, div { clock });
 //! ```
 //!
-//! also you can use any control flow you want, and even imperative patterns, there are no components, only functions that borrow the context.
+//! You can also use any control flow you want, including imperative patterns. There are no components, only functions that borrow the context.
 //! ```
 //! fn counter(mut build: &mut ChunkBuild, name: &str) {
 //! 	let count = build.prop(0);
@@ -152,16 +152,16 @@
 //! }
 //! ```
 //!
-//! not lets recap the [`chunk`](macro@chunk) macro syntax.
+//! Now let's recap the [`chunk`](macro@chunk) macro syntax.
 //!
-//! ## chunk syntax
-//! elements are created in an object like syntax, a tag then a list of attributes, then a list of children.
+//! ## Chunk Syntax
+//! Elements are created using an object-like syntax: a tag, followed by a list of attributes, and then a list of children.
 //!
-//! attributes are written inside parenthesis and separated by commas, name and value are separated by a colon.
+//! Attributes are written inside parentheses and separated by commas, names and values are separated by a colon.
 //!
-//! attributes can accept `&str` and numbers as values that get stringified, they also accepts `bool` that specifis if the attribute is present or not, and also `Option<T>` where the attribute is removed if `None` and set to the value of `T` if `Some(T)`.
+//! Attributes accept `&str` and numbers as values, which get stringified. They also accept a `bool` that specifies if the attribute is present or not, as well as an `Option<T>` where the attribute is removed if `None` and set to the value of `T` if `Some(T)`.
 //!
-//! attributes can be dynamic based on a reactive property by just passing it as value, or based on a reactive expression by passing a `FnMut(&mut DomContext) -> T` that have the same ergonomics as effects.
+//! Attributes can be dynamic based on a reactive property simply by passing it as a value, or based on a reactive expression by passing a `FnMut(&mut DomContext) -> T`, which has the same ergonomics as effects.
 //! ```
 //! let hidden = build.prop(true);
 //! chunk!(build,
@@ -171,11 +171,11 @@
 //! );
 //! ```
 //!
-//! if attribute name is `class.name`, the class `name` will be toggled staticaly and dynamically based on a `bool` value.
+//! If the attribute name is `class.name`, the class `name` will be toggled statically and dynamically based on a `bool` value.
 //!
-//! if attribute name is `style.name`, the style prop `name` will be set staticaly and dynamically based on a `&str` value, `Option<&str>` can be used as well.
+//! If the attribute name is `style.name`, the CSS style property `name` will be set statically and dynamically based on a `&str` value, an `Option<&str>` can be used as well.
 //!
-//! if attribute name is `on.event`, the given event listener will be attacked the `event` event.
+//! If the attribute name is `on.event`, the given event listener will be attached to the specified `event`.
 //! ```
 //! let hidden = build.prop(true);
 //! chunk!(build,
@@ -185,7 +185,7 @@
 //! );
 //! ```
 //!
-//! element body is a list of children enclosed inside curly braces, children can be other elements or `&str`, numbers and `bool`s that get stringified and inserted as text nodes.
+//! The element body is a list of children enclosed inside curly braces. Children can be other elements, or `&str`, numbers, and `bool`s that get stringified and inserted as text nodes.
 //! ```
 //! let text = build.prop(String::from("abc"));
 //! chunk!(build, div {
@@ -195,11 +195,11 @@
 //! 	move |ctx| ctx.read(text).len(),
 //! });
 //! ```
-//! childrens can be also be a do block, they are code blocks that get eveluated at the point they are defined in.
+//! Children can also be a do block, which are code blocks that get evaluated at the point they are defined.
 //!
-//! any [`chunk`](macro@chunk) call inside a do block target the position of the do block, [`ChunkBuild`] is not a uniform builder but a tree based builder where chunks can be nested endlessly.
+//! Any [`chunk`](macro@chunk) call inside a do block targets the position of that do block. [`ChunkBuild`] is not a linear builder but a tree-based builder where chunks can be nested endlessly.
 //!
-//! they are shorthand for `if`, `for` and `match` expressions.
+//! There are shorthands for `if`, `for`, and `match` expressions.
 //! ```
 //! chunk!(build, div {
 //! 	"part 1, "
@@ -213,8 +213,8 @@
 //! });
 //! ```
 //!
-//! ## other features
-//! if you dont love the macro syntax, they are also a builder syntax.
+//! ## Other Features
+//! If you do not prefer the macro syntax, there is also a [builder syntax](crate::apply).
 //! ```
 //! let count = build.prop(0);
 //! build.apply(button((
@@ -223,7 +223,7 @@
 //! )));
 //! ```
 //!
-//! reactive conditional rendering is done by [`show_if`](apply::show_if), while list rendering is done by [`render_list`].
+//! Reactive conditional rendering is done using [`show_if`](apply::show_if), while list rendering is done using [`render_list`].
 //! ```
 //! chunk!(build, div {
 //! 	do {
@@ -234,7 +234,7 @@
 //! });
 //! ```
 //!
-//! element references are done by calling [`ChunkBuild::ref_el`] when inside the target element.
+//! Element references are created by calling [`ChunkBuild::ref_el`] when inside the target element.
 //! ```
 //! build.ref_el(|ctx, el| el.focus());
 //! ```

@@ -1,18 +1,18 @@
 //! # NeoView Web
-//! the web renderer for [`neoview`].
+//! The web renderer for [`neoview`].
 //!
-//! `neoview-web` is the official web renderer for the [`neoview`] framework based on [`HTML`](https://developer.mozilla.org/en-US/docs/Web/HTML) and [`DOM`](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model) technology and interfacing through the [`wasm-bindgen`] crate.
+//! `neoview-web` is the official web renderer for the [`neoview`] framework, based on [`HTML`](https://developer.mozilla.org/en-US/docs/Web/HTML) and [`DOM`](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model) technologies and interfacing through the [`wasm-bindgen`](::wasm_bindgen) crate.
 //!
-//! aligned with [`neoview`] core principles, `neoview-web` supports ergonomic, fully reactive UI definitions with a strong emphasis on safety, robustness, efficiency.
+//! Aligned with [`neoview`]'s core principles, `neoview-web` supports ergonomic, fully reactive UI definitions with a strong emphasis on safety, robustness, and efficiency.
 //!
-//! like every [`neoview`] renderer, it utilizes the effecincy of [fine grained reactivity](neoview#reactive-system), the safety of [context passing](neoview#reactive-system) and the ergonomic of [chunked templating](neoview#templating) to provide high level expressiveness with low level robustness.
+//! Like every [`neoview`] renderer, it utilizes the efficiency of [fine-grained reactivity](neoview#reactive-system), the safety of [context passing](neoview#reactive-system), and the ergonomics of [chunked templating](neoview#templating) to provide high-level expressiveness with low-level robustness.
 //!
 //! # Features
-//! `neoview-web` has its own context [`DomContext`], it borrows the reactive systems from [`neoview`] and has its own flavor of [`chunk`](macro@chunk) with full html support.
+//! `neoview-web` features its own context, [`DomContext`]; it borrows the reactive system from [`neoview`] and provides its own flavor of the [`chunk`](macro@chunk) macro with full HTML support.
 //!
-//! in additional to the featurefullness of [`chunk`](macro@chunk), `neoview-web` has [conditional rendering](apply::show_if), [list rendering](render_list), a [builder pattern](apply) for templating, and [tags, attributes, events and css props intelesence](#html-types).
+//! In addition to the feature-richness of [`chunk`](macro@chunk), `neoview-web` includes [conditional rendering](apply::show_if), [list rendering](render_list), a [builder pattern](apply) for templating, and [IntelliSense for tags, attributes, events, and CSS properties](#html-types).
 //!
-//! here is a simple example, without the init bolerplate:
+//! Here is a simple example without the initialization boilerplate:
 //! ```
 //! chunk!(build, div {
 //! 	h3 { "Hello world!" }
@@ -25,19 +25,19 @@
 //! });
 //! ```
 //!
-//! for a more in depth introduction, check out [guide section](docs::guide).
+//! For a more in-depth introduction, check out the [guide section](docs::guide).
 //!
-//! # crate features
+//! # Crate Features
 //! ### `html-types`
-//! provides intelesence for html tags, attributes, and events (autocomplete and hover discription).
+//! Provides IntelliSense for HTML tags, attributes, and events (autocompletion and hover descriptions).
 //!
-//! it is an optional quality of life feature with no runtime cost.
+//! It is an optional, quality-of-life feature with no runtime cost.
 //! ### `css-types`
-//! provides intelesence for css properties (autocomplete and hover discription).
+//! Provides IntelliSense for CSS properties (autocompletion and hover descriptions).
 //!
-//! it is an optional quality of life feature with no runtime cost.
+//! It is an optional, quality-of-life feature with no runtime cost.
 //!
-//! it requires `html-types`.
+//! It requires the `html-types` feature.
 pub mod apply;
 mod bindings;
 mod build_codes;
