@@ -12,7 +12,7 @@ new_key_type! {
 	pub struct ItemId;
 }
 
-/// a typeaware id of a reactive property.
+/// a typeaware unique identifier of a reactive property.
 ///
 /// the `PropId` is a [`Copy`]able id used in accessing a specific property.
 ///

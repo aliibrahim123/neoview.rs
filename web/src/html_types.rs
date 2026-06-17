@@ -1,4 +1,8 @@
+//! items used in [`chunk`](crate::chunk!) macro intellisense.
+//!
+//! Requires the `html-types` feature.
 #![allow(nonstandard_style, unused)]
+/// HTML tags descriptions
 pub mod html_tags {
 	/// The [`<a>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a) HTML element (or anchor element), with its href attribute, creates a hyperlink to web pages, files, email addresses, locations in the same page, or anything else a URL can address.
 	pub struct a;
@@ -232,6 +236,7 @@ pub mod html_tags {
 	pub struct wbr;
 }
 
+/// HTML attributes descriptions
 pub mod html_attrs {
 	/// The `abbr` attribute specifies an abbreviated form of the element's content.
 	pub static abbr: () = ();
@@ -653,6 +658,7 @@ pub mod html_attrs {
 	pub static wrap: () = ();
 }
 
+/// HTML events descriptions
 pub mod html_events {
 	/// The [`abort`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/abort_event) event is fired when the resource was not fully loaded, but not as the result of an error.
 	pub fn abort() {}
@@ -858,6 +864,6 @@ pub mod html_events {
 	pub fn wheel() {}
 }
 
-#[doc(inline)]
+/// CSS properties descriptions
 #[cfg(feature = "css-types")]
 pub use crate::css_props;
