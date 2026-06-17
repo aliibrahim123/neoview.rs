@@ -1,11 +1,22 @@
-let event_listener = null;
+// @ts-check
+/// <reference lib="dom" />
+
+/** @type { (ctx: number, chunk: number, fun_id: number, event: Event) => void } */
+let event_listener = /** @type {any} */ (null);
+/** @type { (fun: (ctx: number, chunk: number, fun_id: number, event: Event) => void) => void } */
 export function register_event_callback (fun) {
 	event_listener = fun;
 }
 
+/** @typedef { { ind: number } } Cursor */
+
+/** @type { (buf: Uint8Array, cur: Cursor) => number } */
 function decode_u8 (buf, cur) {
 	return buf[cur.ind++]
 }
+
+/** decode LEB128 unsigned integer
+	@type { (buf: Uint8Array, cur: Cursor) => number } */
 function decode_vuint (buf, cur) {
 	let res = 0, shift = 0, cond = true;
 	while (cond) {
@@ -16,13 +27,17 @@ function decode_vuint (buf, cur) {
 	}
 	return res;
 }
+
 let text_decoder = new TextDecoder;
+/** @type { (buf: Uint8Array, cur: Cursor) => string } */
 function decode_str (buf, cur) {
 	let len = decode_vuint(buf, cur);
 	let text = text_decoder.decode(buf.subarray(cur.ind, cur.ind + len));
 	cur.ind += len;
 	return text;
 }
+
+/** @type { (buf: Uint8Array, cur: Cursor) => string } */
 function decode_name (buf, cur) {
 	let tag = decode_vuint(buf, cur);
 	if ((tag & 1) === 1) {
@@ -45,6 +60,9 @@ const NODE = 7;
 const EVENT = 8;
 const END = 255;
 
+/** @type { (
+	el: HTMLElement, build_codes: Uint8Array, cur: Cursor, el_refs: Element[], props: any[], nodes: Node[]
+) => void } */
 function construct_el (el, build_codes, cur, el_refs, props, nodes) {
 	while (true) {
 		let op = decode_u8(build_codes, cur);
@@ -69,7 +87,7 @@ function construct_el (el, build_codes, cur, el_refs, props, nodes) {
 			case PROP: {
 				let prop = decode_str(build_codes, cur);
 				let ind = decode_vuint(build_codes, cur);
-				el[prop] = props[ind];
+				/** @type {any} */ (el)[prop] = props[ind];
 				break
 			}
 			case CLASS: {
@@ -107,6 +125,10 @@ function construct_el (el, build_codes, cur, el_refs, props, nodes) {
 	}
 }
 
+/** contruct an element from build codes
+  @type { (
+	target_el: HTMLElement, build_codes: Uint8Array, props: any[], nodes: Node[]
+  ) => Element[] } */
 export function construct (target_el, build_codes, props, nodes) {
 	let cur = { ind: 0 };
 	let el_refs = [target_el];

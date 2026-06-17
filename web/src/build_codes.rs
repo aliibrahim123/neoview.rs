@@ -156,7 +156,6 @@ impl BuildCodes {
 	}
 }
 
-#[doc(hidden)]
 pub mod __buildcode {
 	#[macro_export]
 	#[doc(hidden)]

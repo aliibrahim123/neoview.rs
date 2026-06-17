@@ -1,6 +1,6 @@
 //! defines the [`chunk!]` macro.
 //!
-//! see the [`chunk`](https://docs.rs/neoview/latest/neoview/chunk) macro documentation in the [neoview crate](https://docs.rs/neoview/latest/neoview).
+//! see the [`chunk`](https://docs.rs/neoview/latest/neoview/macro.chunk.html) macro documentation in the [neoview crate](https://docs.rs/neoview/latest/neoview).
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
