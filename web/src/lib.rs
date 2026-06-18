@@ -50,14 +50,15 @@ pub mod css_props;
 pub mod html_types;
 mod list_render;
 
+/// other documentation sections.
 #[cfg(doc)]
 pub mod docs {
 	pub mod guide;
 }
 
 pub use {
-	chunk::{ChunkBuild, RemovableChunk},
-	context::{CtxHandle, CtxOptions, DomContext, get_ctx, use_ctx},
+	chunk::{ChunkBuild, ChunkRemover, RemovableChunk},
+	context::{ContextId, CtxHandle, CtxOptions, DomContext, get_ctx, use_ctx},
 	list_render::{render_list, render_list_enumerated},
 	neoview,
 	neoview::chunk,

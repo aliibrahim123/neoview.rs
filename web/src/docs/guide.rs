@@ -1,3 +1,5 @@
+//! A guide to using `neoview-web`.
+//!
 //! # Introduction
 //! `neoview-web` apps are compiled as WebAssembly (Wasm) files. It is recommended to read the [`wasm-bindgen` introduction](https://wasm-bindgen.github.io/wasm-bindgen/) before continuing.
 //!

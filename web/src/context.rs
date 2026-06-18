@@ -158,7 +158,7 @@ impl DomContext {
 	/// let (el, remover) = build.build();
 	/// let mut remover = Some(remover);
 	/// chunk!(root_build, el,
-	/// 	button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx)) { "remove" }
+	/// 	button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
 	/// );
 	/// ```
 	pub fn removable_chunk(&mut self, tag: &str) -> RemovableChunk<'_> {
@@ -201,7 +201,7 @@ thread_local!(
 
 /// a handle to a [`DomContext`].
 ///
-/// since events requires an access to the [`DomContext`], [`DomContext] can not be stored directly by value, so a handle is provided instead.
+/// since events requires an access to the [`DomContext`], [`DomContext`] can not be stored directly by value, so a handle is provided instead.
 ///
 /// the [`DomContext`] is dropped only when all handles to it are dropped.
 #[derive(Debug, Clone)]
@@ -267,7 +267,7 @@ pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 
 /// call a function with a mutable reference to a [`DomContext`], if it exists.
 ///
-/// this function is a convenience wrapper for [`get_ctx`] that also flushes updates.
+/// this function is a convenient wrapper for [`get_ctx`] that also flushes updates.
 ///
 /// it returns `Err(())` if the [`DomContext`] was dropped before.
 ///
