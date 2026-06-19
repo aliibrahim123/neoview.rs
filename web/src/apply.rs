@@ -1,10 +1,10 @@
-//! build ui in a native builder pattern.
+//! Builds a UI using a native builder pattern.
 //!
-//! the `apply` module provides another way to construct ui for whom who like a more native macroless approuch using the builder pattern.
+//! The `apply` module provides another way to construct a UI for those who prefer a more native macroless approach using the builder pattern.
 //!
-//! it consists of 2 parts: [`Applicable`] types that do something to the current element, and [`apply`](ChunkBuild::apply) that apply the [`Applicable`] to the current element.
+//! It consists of two parts: [`Applicable`] types that modify the current element and [`apply`](ChunkBuild::apply) which applies the [`Applicable`] to the current element.
 //!
-//! # example
+//! # Example
 //! ```
 //! let count = build.prop(0);
 //! build.apply(div((
@@ -25,13 +25,13 @@ use crate::{
 	prelude::{ChunkBuild, DomContext},
 };
 
-/// a type that does something to the current element.
+/// A type that modifies the current element.
 ///
-/// it takes a [`ChunkBuild`] and does something, this something can be anything: an attribute changed, a child added, nothing and even adding entire ui chunks.
+/// It takes a [`ChunkBuild`] and performs an action such as changing an attribute, adding a child, doing nothing, or even adding entire UI chunks.
 ///
-/// it is implemented for `FnOnce(&mut ChunkBuild)`, and for tuples of `Applicable` upto 12 elements where each `Applicable` is applied in order.
+/// It is implemented for `FnOnce(&mut ChunkBuild)` and for tuples of `Applicable` up to 12 elements where each `Applicable` is applied in order.
 ///
-/// # example
+/// # Example
 /// ```
 /// fn counter(build: &mut ChunkBuild) {
 ///     let count = build.prop(0);
@@ -43,7 +43,7 @@ use crate::{
 /// build.apply(counter);
 /// ```
 pub trait Applicable {
-	/// apply the [`Applicable`] to the current element
+	/// Applies the [`Applicable`] to the current element.
 	fn apply(self, build: &mut ChunkBuild<'_>);
 }
 
@@ -53,9 +53,9 @@ impl<Fn: FnOnce(&mut ChunkBuild<'_>)> Applicable for Fn {
 	}
 }
 
-/// returns an [`Applicable`] that create a `tag` element, apply `applicable` to it and append it to the current element.
+/// Returns an [`Applicable`] that creates a `tag` element, applies `applicable` to it, and appends it to the current element.
 ///
-/// # example
+/// # Example
 /// ```
 /// build.apply(el("div", text("hello world")));
 /// ```
@@ -71,9 +71,9 @@ macro_rules! define_tags {
 	($($tag:ident),+) => {
 		$(
 			#[doc = concat!(
-				"returns an [`Applicable`] that create a `", stringify!($tag),
-				"` element, apply `applicable` to it and append it to the current element.\n\n",
-				"# example\n```\n",
+				"Returns an [`Applicable`] that creates a `", stringify!($tag),
+				"` element, applies `applicable` to it, and appends it to the current element.\n\n",
+				"# Example\n```\n",
 				"build.apply(", stringify!($tag), "(id(\"my-id\")));\n",
 				"```"
 			)]
@@ -84,7 +84,7 @@ macro_rules! define_tags {
 	};
 }
 
-/// specilization of [`el`] for html tags.
+/// Specialization of [`el`] for HTML tags.
 pub mod tags {
 	use super::*;
 	define_tags![
@@ -100,11 +100,11 @@ pub mod tags {
 	];
 }
 
-/// returns an [`Applicable`] that apply `value` to the `name` attribute of the current element.
+/// Returns an [`Applicable`] that applies `value` to the `name` attribute of the current element.
 ///
-/// the `name` can be [`&'static str`](str) or a [`String`], and `value` can be any of [attribute values types](crate::chunk!#attribute-values) in [`chunk`](crate::chunk!) macro.
+/// The `name` can be an [`&'static str`](str) or a [`String`] and `value` can be any of the [attribute value types](crate::chunk!#attribute-values) in the [`chunk`](crate::chunk!) macro.
 ///
-/// # example
+/// # Example
 /// ```
 /// let hidden = build.prop(true);
 /// build.apply(attr("id", "my-id"));
@@ -114,9 +114,9 @@ pub fn attr<T>(name: impl Into<Cow<'static, str>>, value: impl AttrValue<T>) -> 
 	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 
-/// specialization of [`attr`] for `id` attribute
+/// Specialization of [`attr`] for the `id` attribute.
 ///
-/// # example
+/// # Example
 /// ```
 /// build.apply(id("my-id"));
 /// ```
@@ -124,11 +124,11 @@ pub fn id<T>(value: impl AttrValue<T>) -> impl Applicable {
 	move |build: &mut ChunkBuild| value.apply(build, "id".into())
 }
 
-/// returns an [`Applicable`] that toggles the `name` class of the current element based on `value`.
+/// Returns an [`Applicable`] that toggles the `name` class of the current element based on `value`.
 ///
-/// the `name` can be [`&'static str`](str) or a [`String`], and `value` can be any of [`class.name` attributes types](crate::chunk!#classname) in [`chunk`](crate::chunk!) macro.
+/// The `name` can be an [`&'static str`](str) or a [`String`] and `value` can be any of the [`class.name` attribute types](crate::chunk!#classname) in the [`chunk`](crate::chunk!) macro.
 ///
-/// # example
+/// # Example
 /// ```
 /// let hidden = build.prop(true);
 /// build.apply(class("px-1", true));
@@ -138,11 +138,11 @@ pub fn class(name: impl Into<Cow<'static, str>>, value: impl ClassValue) -> impl
 	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 
-/// returns an [`Applicable`] that apply `value` to the `name` css property of the current element.
+/// Returns an [`Applicable`] that applies `value` to the `name` CSS property of the current element.
 ///
-/// the `name` can be [`&'static str`](str) or a [`String`], and `value` can be any of [`style.name` attributes types](crate::chunk!#styleprop) in [`chunk`](crate::chunk!) macro.
+/// The `name` can be an [`&'static str`](str) or a [`String`] and `value` can be any of the [`style.name` attribute types](crate::chunk!#styleprop) in the [`chunk`](crate::chunk!) macro.
 ///
-/// # example
+/// # Example
 /// ```
 /// let color = build.prop(String::from("red"));
 /// build.apply(style("font-size", "16px"));
@@ -152,11 +152,11 @@ pub fn style<T>(name: impl Into<Cow<'static, str>>, value: impl StyleValue<T>) -
 	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 
-/// returns an [`Applicable`] that apply set `value` to the `name` property of the current element.
+/// Returns an [`Applicable`] that sets `value` to the `name` property of the current element.
 ///
-/// the `name` can be [`&'static str`](str) or a [`String`], and `value` can be any of [`prop.name` attributes types](crate::chunk!#propname) in [`chunk`](crate::chunk!) macro.
+/// The `name` can be an [`&'static str`](str) or a [`String`] and `value` can be any of the [`prop.name` attribute types](crate::chunk!#propname) in the [`chunk`](crate::chunk!) macro.
 ///
-/// # example
+/// # Example
 /// ```
 /// let html = build.prop(JsValue::from("html"));
 /// build.apply(prop("innerText", JsValue::from("hello world")));
@@ -166,11 +166,11 @@ pub fn prop(name: impl Into<Cow<'static, str>>, value: impl PropValue) -> impl A
 	move |build: &mut ChunkBuild| value.apply(build, name.into())
 }
 
-/// returns an [`Applicable`] that add a `event` event listener to the current element.
+/// Returns an [`Applicable`] that adds an `event` event listener to the current element.
 ///
-/// the listener takes a [`DomContext`] and [`Event`] as arguments.
+/// The listener takes a [`DomContext`] and an [`Event`] as arguments.
 ///
-/// # example
+/// # Example
 /// ```
 /// build.apply(button(on("click", |ctx, _| println!("clicked"))));
 /// ```
@@ -178,11 +178,11 @@ pub fn on(event: &str, fun: impl FnMut(&mut DomContext, Event) + 'static) -> imp
 	move |build: &mut ChunkBuild| add_event(build, event, Box::new(fun))
 }
 
-/// returns an [`Applicable`] that append `value` as text node to the current element.
+/// Returns an [`Applicable`] that appends `value` as a text node to the current element.
 ///
-/// `value` can be any of [text content types](crate::chunk!#text-content) in [`chunk`](crate::chunk!) macro.
+/// The `value` can be any of the [text content types](crate::chunk!#text-content) in the [`chunk`](crate::chunk!) macro.
 ///
-/// # example
+/// # Example
 /// ```
 /// let text = build.prop(String::from("abc"));
 /// build.apply(text("hello world"));
@@ -192,11 +192,11 @@ pub fn text<T>(value: impl TextValue<T>) -> impl Applicable {
 	move |build: &mut ChunkBuild| value.apply(build)
 }
 
-/// returns an [`Applicable`] that append `value` as node to the current element.
+/// Returns an [`Applicable`] that appends `value` as a node to the current element.
 ///
-/// `value` can be any of [node content types](crate::chunk!#node-content) in [`chunk`](crate::chunk!) macro.
+/// The `value` can be any of the [node content types](crate::chunk!#node-content) in the [`chunk`](crate::chunk!) macro.
 ///
-/// # example
+/// # Example
 /// ```
 /// let el = document().unwrap().create_element("div").unwrap();
 /// let prop = build.prop(el.clone());
@@ -207,7 +207,7 @@ pub fn node<T>(value: impl NodeValue<T>) -> impl Applicable {
 	move |build: &mut ChunkBuild| value.apply(build)
 }
 
-/// the [`Applicable`] of [`show_if`]
+/// The [`Applicable`] implementation for [`show_if`].
 #[doc(hidden)]
 pub trait ShowIfValue {
 	fn apply(self, build: &mut ChunkBuild);
@@ -238,14 +238,14 @@ impl<F: FnMut(&mut DomContext) -> bool + 'static> ShowIfValue for F {
 	}
 }
 
-/// returns an [`Applicable`] that show and hides the current element based on `value`.
+/// Returns an [`Applicable`] that shows and hides the current element based on `value`.
 ///
-/// `value` can be:
-/// - [`bool`]: show the element if `value` is `true`.
-/// - [`PropId<bool>`]: everytime the property changes, the element is hidden/showen based on its value.
-/// - [`ComputedExpr<bool>`](crate::chunk!#computedexprt): the element is hidden/showen based on the evaluated value.
+/// The `value` can be:
+/// - [`bool`]: shows the element if `value` is `true`.
+/// - [`PropId<bool>`]: every time the property changes the element is hidden or shown based on its value.
+/// - [`ComputedExpr<bool>`](crate::chunk!#computedexprt): the element is hidden or shown based on the evaluated value.
 ///
-/// # example
+/// # Example
 /// ```
 /// let visible = build.prop(true);
 /// build.apply(show_if(visible));

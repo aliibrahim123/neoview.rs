@@ -13,17 +13,17 @@ use web_sys::Element;
 
 use crate::{chunk::ChunkRemover, context::DomContext, prelude::ChunkBuild};
 
-/// dynamic list rendering primitive.
+/// Dynamic list rendering primitive.
 ///
-/// the `render_list` function take a reactive property containing a list and construct each item into the curent element.
+/// The `render_list` function takes a reactive property containing a list and constructs each item into the current element.
 ///
-/// when the list changes, `render_list` patch the ui by constructing the new items, removing the old ones and moving the required ones.
+/// When the list changes, `render_list` patches the UI by constructing new items, removing old ones, and moving existing ones as required.
 ///
-/// the list is any type impliminting [`AsRef<[T]>`](AsRef), and a `key_fn` that returns a unique key for each item is requried since diff is based on the simple keys for performance reasons.
+/// The list can be any type implementing [`AsRef<[T]>`](AsRef) and a `key_fn` that returns a unique key for each item is required because diffing is based on these simple keys for performance reasons.
 ///
-/// an item ui is constructed by creating a `tag` element then targeting it with a [`ChunkBuild`] having its own scope and passing the build with the item to the `item_chunk` function, after that builing the build and inserting the element into the ui.
+/// An item UI is constructed by creating a `tag` element, targeting it with a [`ChunkBuild`] that has its own scope, passing the build along with the item to the `item_chunk` function, building the chunk, and finally inserting the element into the UI.
 ///
-/// # example
+/// # Example
 /// ```
 /// #[derive(Clone)]
 /// struct User { id: u32, name: String, age: u32 }
@@ -34,11 +34,11 @@ use crate::{chunk::ChunkRemover, context::DomContext, prelude::ChunkBuild};
 /// ```
 ///
 /// # Notes
-/// note that keys must be unique, the renderer handle deplicate keys fully but the state of the ui will be unpredictable, and multiple items having the same key may have different fields leading to chous.
+/// Note that keys must be unique. The renderer handles duplicate keys but the state of the UI will become unpredictable and multiple items sharing the same key might have different fields which leads to chaos.
 ///
-/// all item chunks will be removed when the parent chunk is removed.
+/// All item chunks will be removed when the parent chunk is removed.
 ///
-/// for dynamic indexes, see [`render_list_enumerated`].
+/// For dynamic indexes, see [`render_list_enumerated`].
 pub fn render_list<T: Clone, K: Eq + Hash + 'static>(
 	build: &mut ChunkBuild, prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
 	tag: impl Into<Cow<'static, str>>, mut item_chunk: impl FnMut(&mut ChunkBuild, T) + 'static,
@@ -50,11 +50,11 @@ pub fn render_list<T: Clone, K: Eq + Hash + 'static>(
 	);
 }
 
-/// like [`render_list`] but with dynamic indexes.
+/// Like [`render_list`] but with dynamic indexes.
 ///
-/// the `render_list_enumerated` is exactly like the normal [`render_list`] except additional reactive property reflecting the index of the item in the list is passed to the `item_chunk`.
+/// The `render_list_enumerated` function behaves exactly like the normal [`render_list`] except an additional reactive property reflecting the index of the item in the list is passed to the `item_chunk`.
 ///
-/// # example
+/// # Example
 /// ```
 /// #[derive(Clone)]
 /// struct User { id: u32, name: String, age: u32 }

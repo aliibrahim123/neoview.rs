@@ -57,20 +57,21 @@ pub mod docs {
 }
 
 #[doc(hidden)]
+#[allow(unused_imports)]
 pub mod __private {
 	use super::*;
 	use neoview::PropId;
 	/// Constructs a UI chunk in an expressive, object-like syntax.
 	///
-	/// this `chunk` macro inherent the expressiveness of [`neoview`] [`chunk`](https://docs.rs/neoview/latest/neoview/macro.chunk.html) macro and add its html flavor over it.
+	/// This `chunk` macro inherits the expressiveness of the [`neoview`] [`chunk`](https://docs.rs/neoview/latest/neoview/macro.chunk.html) macro and adds an HTML flavor to it.
 	///
-	/// `chunk` requires the [`__buildcodes`](prelude::__buildcode) module to be in scope.
+	/// The `chunk` macro requires the [`__buildcodes`](prelude::__buildcode) module to be in scope.
 	///
-	/// `chunk` is the recommended way to construct UI, however they are the [`apply`] module if you like a native builder pattern.
+	/// The `chunk` macro is the recommended way to construct UIs, however, you can use the [`apply`] module if you prefer a native builder pattern.
 	///
-	/// the [`html-types`](crate#html-types) and [`css-types`](crate#css-types) crate features provide intellisense for tags, attributes, events, and CSS properties.
+	/// The [`html-types`](crate#html-types) and [`css-types`](crate#css-types) crate features provide IntelliSense for tags, attributes, events, and CSS properties.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// chunk!(build, div {
 	///     h3 { "Hello world!" }
@@ -86,18 +87,18 @@ pub mod __private {
 	/// });
 	/// ```
 	///
-	/// # syntax
-	/// the `build` argument must be a [`ChunkBuild`].
+	/// # Syntax
+	/// The `build` argument must be a [`ChunkBuild`].
 	///
 	/// ### `ComputedExpr<T>`
-	/// computed expressions are closures of type `FnMut(&mut DomContext) -> T` passed as attribute values and content.
+	/// Computed expressions are closures of type `FnMut(&mut DomContext) -> T` passed as attribute values and content.
 	///
-	/// the are kind of dynamic binding where each time one of the properties they read is updated, they get reevaluated and the new value is set to the target.
+	/// They act as a kind of dynamic binding: each time one of the properties they read is updated, they are re-evaluated and the new value is applied to the target.
 	///
-	/// ## elements
-	/// elements are defined though the [element syntax](https://docs.rs/neoview/latest/neoview/macro.chunk.html#element) where they can have attributes, children, or both.
+	/// ## Elements
+	/// Elements are defined using the [element syntax](https://docs.rs/neoview/latest/neoview/macro.chunk.html#element), allowing them to have attributes, children, or both.
 	///
-	/// tags can be an identifier that is a valid html tag, or a string literal for custom tags.
+	/// Tags can be an identifier representing a valid HTML tag, or a string literal for custom tags.
 	///
 	/// ```
 	/// chunk!(build,
@@ -106,13 +107,13 @@ pub mod __private {
 	///     "web-component"(id: "my-id")
 	/// );
 	/// ```
-	/// ## attributes
-	/// attributes are applied statically or dynamically based on a value.
+	/// ## Attributes
+	/// Attributes are applied statically or dynamically based on a value.
 	///
-	/// attributes names can be:
-	/// - an identifier that is valid html attribute, the `_` in it are replaced with `-`.
-	/// - kebab case name written with identifiers separated by `-`.
-	/// - string literal for custom attribute names.
+	/// Attribute names can be:
+	/// - An identifier representing a valid HTML attribute, any `_` characters are replaced with `-`.
+	/// - A kebab-case name composed of identifiers separated by `-`.
+	/// - A string literal for custom attribute names.
 	///
 	/// ```
 	/// chunk!(build, div(
@@ -122,15 +123,15 @@ pub mod __private {
 	///     "@ns.custom[attr]": "any attr"
 	/// ));
 	/// ```
-	/// #### attribute values
-	/// attribute values are expressions that can be of type:
-	/// - [`&str`](str), [`String`], [`char`]: set directly.
-	/// - [`bool`]: toggle attrubute based on it.
-	/// - [`i8`], [`i16`], [`i32`], [`i64`], [`i128`], [`isize`], [`u8`], [`u16`], [`u32`], [`u64`], [`u128`], [`usize`], [`f32`], [`f64`]: stringify then set.
-	/// - [`Option<T>`]: if `Some(T)` then apply T, else remove the attribute.
-	/// - `&T`: apply T.
-	/// - [`PropId<T>`]: everythime the property is updated, its value is applied to the attribute.
-	/// - [`ComputedExpr<T>`](#computedexprt): its evaluated value is applied to the attribute.
+	/// #### Attribute Values
+	/// Attribute values are expressions that can be of the following types:
+	/// - [`&str`](str), [`String`], [`char`]: Set directly.
+	/// - [`bool`]: Toggles the attribute based on its boolean value.
+	/// - [`i8`], [`i16`], [`i32`], [`i64`], [`i128`], [`isize`], [`u8`], [`u16`], [`u32`], [`u64`], [`u128`], [`usize`], [`f32`], [`f64`]: Stringified and then set.
+	/// - [`Option<T>`]: If `Some(T)`, applies `T`, otherwise, removes the attribute.
+	/// - `&T`: Applies `T`.
+	/// - [`PropId<T>`]: Every time the property is updated, its new value is applied to the attribute.
+	/// - [`ComputedExpr<T>`](#computedexprt): Its evaluated value is applied to the attribute.
 	/// ```
 	/// let value = build.prop(10);
 	/// chunk!(build, progress(
@@ -142,19 +143,19 @@ pub mod __private {
 	/// ));
 	/// ```
 	///
-	/// ## special attributes
+	/// ## Special Attributes
 	/// ### `class.name`
-	/// the class `name` is toggled statically and dynamically based on a value.
+	/// The class `name` is toggled statically or dynamically based on a value.
 	///
-	/// the `name` can be:
-	/// - an identifier where the `_` in it are replaced with `-`.
-	/// - kebab case name written with identifiers separated by `-`.
-	/// - string literal for custom class names.
+	/// The `name` can be:
+	/// - An identifier where any `_` characters are replaced with `-`.
+	/// - A kebab-case name composed of identifiers separated by `-`.
+	/// - A string literal for custom class names.
 	///
-	/// the value can be:
-	/// - [`bool`]: toggle the class at build time.
-	/// - [`PropId<bool>`]: everytime the property is updated, the class is toggled based on its value.
-	/// - [`ComputedExpr<bool>`](#computedexprt): its evaluated value is used to toggle the class.
+	/// The value can be:
+	/// - [`bool`]: Toggles the class at build time.
+	/// - [`PropId<bool>`]: Every time the property is updated, the class is toggled based on its new value.
+	/// - [`ComputedExpr<bool>`](#computedexprt): Its evaluated value is used to toggle the class.
 	///
 	/// ```
 	/// let active = build.prop(false);
@@ -166,19 +167,19 @@ pub mod __private {
 	/// ```
 	///
 	/// ### `style.prop`
-	/// the css property `prop` is applied statically and dynamically based on a value.
+	/// The CSS property `prop` is applied statically or dynamically based on a value.
 	///
-	/// the `prop` can be:
-	/// - an identifier where the `_` in it are replaced with `-`.
-	/// - kebab case name written with identifiers separated by `-`.
-	/// - string literal for complex property names.
+	/// The `prop` can be:
+	/// - An identifier where any `_` characters are replaced with `-`.
+	/// - A kebab-case name composed of identifiers separated by `-`.
+	/// - A string literal for complex property names.
 	///
-	/// the value can be:
-	/// - [`&str`](str), [`String`]: set directly.
-	/// - [`Option<T>`]: if `Some(T)` then apply T, else remove the property.
-	/// - `&T`: apply T.
-	/// - [`PropId<T>`]: everythime the property is updated, its value is applied to the css property.
-	/// - [`ComputedExpr<T>`](#computedexprt): its evaluated value is applied to the css property.
+	/// The value can be:
+	/// - [`&str`](str), [`String`]: Set directly.
+	/// - [`Option<T>`]: If `Some(T)`, applies `T`, otherwise, removes the CSS property.
+	/// - `&T`: Applies `T`.
+	/// - [`PropId<T>`]: Every time the property is updated, its new value is applied to the CSS property.
+	/// - [`ComputedExpr<T>`](#computedexprt): Its evaluated value is applied to the CSS property.
 	///
 	/// ```
 	/// let color = build.prop(String::from("red"));
@@ -191,14 +192,14 @@ pub mod __private {
 	/// ```
 	///
 	/// ### `prop.name`
-	/// the element property `name` is binded statically and dynamically based on a value.
+	/// The element property `name` is bound statically or dynamically based on a value.
 	///
-	/// the `name` can be an identifier or a string literal.
+	/// The `name` can be an identifier or a string literal.
 	///
-	/// the value can be:
-	/// - [`JsValue`](wasm_bindgen::JsValue): set at build time.
-	/// - [`PropId<JsValue>`]: everythime the property is updated, its value is set to the property.
-	/// - [`ComputedExpr<JsValue>`](#computedexprt): its evaluated value is set to the property.
+	/// The value can be:
+	/// - [`JsValue`](wasm_bindgen::JsValue): Set at build time.
+	/// - [`PropId<JsValue>`]: Every time the property is updated, its new value is assigned to the element property.
+	/// - [`ComputedExpr<JsValue>`](#computedexprt): Its evaluated value is assigned to the element property.
 	///
 	/// ```
 	/// let html = build.prop(JsValue::from("hello <b>world</b>"));
@@ -210,11 +211,11 @@ pub mod __private {
 	/// ```
 	///
 	/// ### `on.event`
-	/// add an event listener to the event `event`.
+	/// Adds an event listener to the specified `event`.
 	///
-	/// the listener is an `FnMut` called with `(&mut DomContext, Event)` and after it is called, updates are [flushed](neoview::Store::flush_updates).
+	/// The listener is an `FnMut` called with `(&mut DomContext, Event)`, after it is called, updates are [flushed](neoview::Store::flush_updates).
 	///
-	/// `event` can be a valid html event name, or a string literal.
+	/// The `event` can be a valid HTML event name or a string literal.
 	///
 	/// ```
 	/// let count = build.prop(0);
@@ -224,17 +225,17 @@ pub mod __private {
 	/// );
 	/// ```
 	///
-	/// ## content
-	/// ### text content
-	/// the text content is an expression placed as a child of an element, its evaluated value is inserted as text node in the element.
+	/// ## Content
+	/// ### Text Content
+	/// Text content is an expression placed as a child of an element; its evaluated value is inserted as a text node within the element.
 	///
-	/// its value can be:
-	/// - [`&str`](str), [`String`], [`char`]: inserted directly.
-	/// - [`bool`], [`i8`], [`i16`], [`i32`], [`i64`], [`i128`], [`isize`], [`u8`], [`u16`], [`u32`], [`u64`], [`usize`], [`u128`], [`f32`], [`f64`]: stringified and inserted.
-	/// - [`Option<T>`]: if `Some(T)` then insert T, else set the text content to `""`.
-	/// - `&T`: insert T.
-	/// - [`PropId<T>`]: everythime the property is updated, the text node is updated with its value.
-	/// - [`ComputedExpr<T>`](#computedexprt): the text node is updated with the evaluated value.
+	/// Its value can be:
+	/// - [`&str`](str), [`String`], [`char`]: Inserted directly.
+	/// - [`bool`], [`i8`], [`i16`], [`i32`], [`i64`], [`i128`], [`isize`], [`u8`], [`u16`], [`u32`], [`u64`], [`usize`], [`u128`], [`f32`], [`f64`]: Stringified and inserted.
+	/// - [`Option<T>`]: If `Some(T)`, inserts `T`, otherwise, sets the text content to `""`.
+	/// - `&T`: Inserts `T`.
+	/// - [`PropId<T>`]: Every time the property is updated, the text node is updated with its new value.
+	/// - [`ComputedExpr<T>`](#computedexprt): The text node is updated with the evaluated value.
 	///
 	/// ```
 	/// let text = build.prop(String::from("abc"));
@@ -247,13 +248,13 @@ pub mod __private {
 	/// });
 	/// ```
 	///
-	/// ### node content
-	/// the node content is an expression placed as a child of an element, its evaluated value is inserted as a child of that element.
+	/// ### Node Content
+	/// Node content is an expression placed as a child of an element, its evaluated value is inserted as a child node within that element.
 	///
-	/// its value can be:
-	/// - [`Into<Node>`](web_sys::Node): inserted at build time.
-	/// - [`PropId<Into<Node>>`]: everythime the property is updated, the node is replaced with its value.
-	/// - [`ComputedExpr<Into<Node>>`](#computedexprt): the node is replaced with the evaluated value.
+	/// Its value can be:
+	/// - [`Into<Node>`](web_sys::Node): Inserted at build time.
+	/// - [`PropId<Into<Node>>`]: Every time the property is updated, the node is replaced with its new value.
+	/// - [`ComputedExpr<Into<Node>>`](#computedexprt): The node is replaced with the evaluated value.
 	///
 	/// ```
 	/// let el = document().unwrap().create_element("div").unwrap();

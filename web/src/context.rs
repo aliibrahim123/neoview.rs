@@ -1,4 +1,4 @@
-//! defines and manages [`DomContext`]
+//! Defines and manages [`DomContext`].
 
 use std::{
 	cell::{Ref, RefCell, RefMut},
@@ -15,7 +15,7 @@ use crate::chunk::{Chunk, ChunkBuild, ChunkId, RemovableChunk};
 
 /// A unique identifier for a [`DomContext`].
 ///
-/// this is is used when retrieving a [`DomContext`] using [`get_ctx`].
+/// This is used when retrieving a [`DomContext`] using [`get_ctx`].
 /// ```
 /// let id = ctx.id();
 /// // some time
@@ -24,21 +24,21 @@ use crate::chunk::{Chunk, ChunkBuild, ChunkId, RemovableChunk};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContextId(pub(crate) u64);
 impl ContextId {
-	/// get the value of the [`ContextId`].
+	/// Gets the value of the [`ContextId`].
 	pub fn value(&self) -> u64 {
 		self.0
 	}
-	/// return a new [`ContextId`].
+	/// Returns a new [`ContextId`].
 	fn next() -> Self {
 		static COUNTER: AtomicU64 = AtomicU64::new(0);
 		Self(COUNTER.fetch_add(1, Ordering::Relaxed))
 	}
 }
 
-/// options for a [`DomContext`].
+/// Options for a [`DomContext`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CtxOptions {
-	/// whether to remove the root element when the [`DomContext`] is dropped, default: `true`.
+	/// Whether to remove the root element when the [`DomContext`] is dropped. The default is `true`.
 	pub remove_el_on_drop: bool,
 }
 impl Default for CtxOptions {
@@ -47,43 +47,43 @@ impl Default for CtxOptions {
 	}
 }
 
-/// the [`Context`] of the `neoview-web` renderer.
+/// The [`Context`] of the `neoview-web` renderer.
 ///
-/// this type is the single owner of the ui, every interaction requires a mutable reference to the it, and the ui is dropped when the `DomContext` is dropped.
+/// This type is the single owner of the UI. Every interaction requires a mutable reference to it, and the UI is dropped when the `DomContext` is dropped.
 ///
-/// it is created by [`new`](Self::new), wraps a root [`Element`] and exposes its [`Store`] through [`StoreProv`].
+/// It is created by [`new`](Self::new), wraps a root [`Element`], and exposes its [`Store`] through [`StoreProv`].
 /// ```
 /// let handle = DomContext::new(root_el, CtxOptions::default());
 /// let ctx = handle.borrow_mut();
 /// ```
 ///
-/// it is identified by a [`ContextId`] that is used when retrieving it using [`get_ctx`].
+/// It is identified by a [`ContextId`] which is used when retrieving it using [`get_ctx`].
 /// ```
 /// let id = ctx.id();
 /// // some time
 /// let ctx = get_ctx(id).unwrap();
 /// ```
 ///
-/// `DomContext` can not be stored directly by value, instead it is owned in a [`CtxHandle`].
+/// `DomContext` cannot be stored directly by value. Instead it is owned in a [`CtxHandle`].
 #[derive(Debug)]
 pub struct DomContext {
-	/// the [`ContextId`] of the `DomContext`.
+	/// The [`ContextId`] of the `DomContext`.
 	pub(crate) id: ContextId,
-	/// options for the `DomContext`.
+	/// Options for the `DomContext`.
 	options: CtxOptions,
-	/// the root element of the `DomContext`.
+	/// The root element of the `DomContext`.
 	root_el: Element,
-	/// the store of the `DomContext`.
+	/// The store of the `DomContext`.
 	store: Store<Self>,
-	/// the chunks of the `DomContext`.
+	/// The chunks of the `DomContext`.
 	pub(crate) chunks: SlotMap<ChunkId, Chunk>,
 }
 impl DomContext {
-	/// creates a new `DomContext`.
+	/// Creates a new `DomContext`.
 	///
-	/// this function creates a new `DomContext` wrapping a given root [`Element`] and taking a [`CtxOptions`], and returns a [`CtxHandle`] to it.
+	/// This function creates a new `DomContext` wrapping a given root [`Element`] and taking [`CtxOptions`], and it returns a [`CtxHandle`] to it.
 	///
-	/// the root element can be in the DOM tree or outside it, and it can be an html element, svg one or any other element.
+	/// The root element can be in the DOM tree or outside it. It can be an HTML element, an SVG element, or any other element.
 	///
 	/// # Example
 	/// ```
@@ -102,26 +102,26 @@ impl DomContext {
 		CtxHandle::new(ctx)
 	}
 
-	/// returns the [`ContextId`] of this `DomContext`.
+	/// Returns the [`ContextId`] of this `DomContext`.
 	pub fn id(&self) -> ContextId {
 		self.id
 	}
-	/// returns the root [`Element`] of this `DomContext`.
+	/// Returns the root [`Element`] of this `DomContext`.
 	pub fn root_el(&self) -> Element {
 		self.root_el.clone()
 	}
-	/// creates a new [`Chunk`] and returns its [`ChunkId`].
+	/// Creates a new [`Chunk`] and returns its [`ChunkId`].
 	fn new_chunk_id(&mut self) -> ChunkId {
 		self.chunks.insert(Chunk::default())
 	}
 
-	/// creates a [`ChunkBuild`] targeting the root [`Element`].
+	/// Creates a [`ChunkBuild`] targeting the root [`Element`].
 	///
-	/// the scope of the [`ChunkBuild`] is the global scope.
+	/// The scope of the [`ChunkBuild`] is the global scope.
 	///
-	/// while one is enough, multiple root [`ChunkBuild`]s can be build and each one append to the root element.
+	/// While one is enough, multiple root [`ChunkBuild`]s can be built, and each one appends to the root element.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let mut build = ctx.root_chunk();
 	/// chunk!(build, div { "hello world" });
@@ -132,11 +132,11 @@ impl DomContext {
 		ChunkBuild::new(self, id, None, self.root_el.clone())
 	}
 
-	/// creates a [`ChunkBuild`] targeting the base [`Element`].
+	/// Creates a [`ChunkBuild`] targeting the base [`Element`].
 	///
-	/// the scope of the [`ChunkBuild`] is the global scope.
+	/// The scope of the [`ChunkBuild`] is the global scope.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let el = window().unwrap().document().unwrap().create_element("div").unwrap();
 	/// let mut build = root_build.ctx().new_chunk(el);
@@ -149,9 +149,9 @@ impl DomContext {
 		ChunkBuild::new(self, id, None, base_el)
 	}
 
-	/// creates a [`RemovableChunk`] targeting a new [`Element`] of a given `tag`.
+	/// Creates a [`RemovableChunk`] targeting a new [`Element`] of a given `tag`.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let mut build = root_build.ctx().removable_chunk("div");
 	/// chunk!(build, "hello world");
@@ -195,24 +195,24 @@ impl Drop for DomContext {
 }
 
 thread_local!(
-	/// a weak map storing [`DomContext`].
+	/// A weak map storing [`DomContext`]s.
 	static CTX_MAP: RefCell<FxHashMap<ContextId, Weak<RefCell<DomContext>>>> = Default::default();
 );
 
-/// a handle to a [`DomContext`].
+/// A handle to a [`DomContext`].
 ///
-/// since events requires an access to the [`DomContext`], [`DomContext`] can not be stored directly by value, so a handle is provided instead.
+/// Since events require access to the [`DomContext`], the [`DomContext`] cannot be stored directly by value. A handle is provided instead.
 ///
-/// the [`DomContext`] is dropped only when all handles to it are dropped.
+/// The [`DomContext`] is dropped only when all handles to it are dropped.
 #[derive(Debug, Clone)]
 pub struct CtxHandle {
-	/// the id of the [`DomContext`].
+	/// The ID of the [`DomContext`].
 	id: ContextId,
-	/// the [`DomContext`] box.
+	/// The [`DomContext`] box.
 	ctx: Rc<RefCell<DomContext>>,
 }
 impl CtxHandle {
-	/// integrate a [`DomContext`] into the content map and returns a [`CtxHandle`] to it.
+	/// Integrates a [`DomContext`] into the content map and returns a [`CtxHandle`] to it.
 	fn new(ctx: DomContext) -> Self {
 		let id = ctx.id;
 		let ctx = Rc::new(RefCell::new(ctx));
@@ -220,15 +220,15 @@ impl CtxHandle {
 		CTX_MAP.with_borrow_mut(|map| map.insert(id, weak));
 		Self { id, ctx }
 	}
-	/// returns the [`ContextId`] of the [`DomContext`].
+	/// Returns the [`ContextId`] of the [`DomContext`].
 	pub fn id(&self) -> ContextId {
 		self.id
 	}
-	/// returns a reference to the [`DomContext`].
+	/// Returns a reference to the [`DomContext`].
 	pub fn borrow(&self) -> Ref<'_, DomContext> {
 		self.ctx.borrow()
 	}
-	/// returns a mutable reference to the [`DomContext`].
+	/// Returns a mutable reference to the [`DomContext`].
 	pub fn borrow_mut(&self) -> RefMut<'_, DomContext> {
 		self.ctx.borrow_mut()
 	}
@@ -243,13 +243,13 @@ impl Drop for CtxHandle {
 	}
 }
 
-/// returns a [`CtxHandle`] to the [`DomContext`] of the given [`ContextId`], if it exists.
+/// Returns a [`CtxHandle`] to the [`DomContext`] of the given [`ContextId`] if it exists.
 ///
-/// this function is only used when handling events, passing context directly is the 99.99% option.
+/// This function is only used when handling events. Passing the context directly is the preferred approach in almost all cases.
 ///
-/// returns `None` if the [`DomContext`] was dropped before.
+/// Returns `None` if the [`DomContext`] was dropped previously.
 ///
-/// # example
+/// # Example
 /// ```
 /// fn on_event(event: Event) {
 ///     let ctx = get_ctx(id).unwrap();
@@ -265,13 +265,13 @@ pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 	})
 }
 
-/// call a function with a mutable reference to a [`DomContext`], if it exists.
+/// Calls a function with a mutable reference to a [`DomContext`] if it exists.
 ///
-/// this function is a convenient wrapper for [`get_ctx`] that also flushes updates.
+/// This function is a convenient wrapper for [`get_ctx`] that also flushes updates.
 ///
-/// it returns `Err(())` if the [`DomContext`] was dropped before.
+/// It returns `Err(())` if the [`DomContext`] was dropped previously.
 ///
-/// # example
+/// # Example
 /// ```
 /// fn on_event(event: Event) {
 ///     use_ctx(id, |ctx| {

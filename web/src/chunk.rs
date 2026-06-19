@@ -1,4 +1,4 @@
-//! defines the chunk and its builds
+//! Defines the chunk and its builds.
 use std::{
 	fmt::Debug,
 	ops::{Deref, DerefMut},
@@ -11,15 +11,15 @@ use web_sys::{Element, Event};
 use crate::{apply::Applicable, build_codes::BuildCodes, context::DomContext};
 
 new_key_type!(
-	/// a unique identifier for a chunk
+	/// A unique identifier for a chunk.
 	pub struct ChunkId;
 );
 
-/// chunk data
+/// Chunk data.
 #[derive(Default)]
 pub struct Chunk {
 	pub elements: Vec<Element>,
-	/// event listeners
+	/// Event listeners.
 	pub events: Vec<Option<Box<dyn FnMut(&mut DomContext, Event)>>>,
 }
 impl Debug for Chunk {
@@ -28,21 +28,21 @@ impl Debug for Chunk {
 	}
 }
 
-/// a chunk under construction.
+/// A chunk under construction.
 ///
-/// the `ChunkBuild` is the interface and the builder that is used while contructing a chunk.
+/// The `ChunkBuild` is the interface and builder used while constructing a chunk.
 ///
-/// it borrows the [`DomContext`], target a base [`Element`] and a specific [scope](Store#slab-management) and expose the [`Store`] through [`StoreProv`].
+/// It borrows the [`DomContext`], targets a base [`Element`] and a specific [scope](Store#slab-management), and exposes the [`Store`] through [`StoreProv`].
 ///
-/// ui can be appended to in a tree like manner through the [`chunk`](crate::chunk!) macro and the [`apply`](crate::apply) module.
+/// The UI can be appended to in a tree-like manner using the [`chunk`](crate::chunk!) macro and the [`apply`](crate::apply) module.
 ///
-/// the ui definition get recorded in a buffer and is built in oneshot at the end by calling the [`build`](ChunkBuild::build) function.
+/// The UI definition gets recorded in a buffer and is built in one shot at the end by calling the [`build`](ChunkBuild::build) function.
 ///
-/// multiple chunks can target the same base [`Element`] as the `ChunkBuild` just append its ui to it.
+/// Multiple chunks can target the same base [`Element`] because the `ChunkBuild` simply appends its UI to it.
 ///
-/// after a chunk is build, the constructed ui can be altered in whatever way, the bindings target the specific [`Element`]s directly.
+/// After a chunk is built, the constructed UI can be altered in whatever way because the bindings target the specific [`Element`]s directly.
 ///
-/// # example
+/// # Example
 /// ```
 /// let el = window().unwrap().document().unwrap().create_element("div").unwrap();
 /// let mut build = root_build.ctx().new_chunk(el);
@@ -52,36 +52,36 @@ impl Debug for Chunk {
 /// chunk!(root_build, el);
 /// ```
 pub struct ChunkBuild<'ctx> {
-	/// the context
+	/// The context.
 	pub(crate) ctx: &'ctx mut DomContext,
-	/// the chunk id
+	/// The chunk ID.
 	pub(crate) id: ChunkId,
-	/// the slab id
+	/// The slab ID.
 	pub(crate) slab: Option<SlabId>,
-	/// the base element
+	/// The base element.
 	pub(crate) base_el: Element,
 	#[doc(hidden)]
 	pub build_codes: BuildCodes,
-	/// queue of `ref_el` callbacks: (el_id, fun)
+	/// A queue of `ref_el` callbacks: (el_id, fun).
 	ref_queue: Vec<(u64, Box<dyn FnOnce(&mut DomContext, &Element)>)>,
 }
 impl<'ctx> ChunkBuild<'ctx> {
-	/// creates a new [`ChunkBuild`]
+	/// Creates a new [`ChunkBuild`].
 	pub(crate) fn new(
 		ctx: &'ctx mut DomContext, id: ChunkId, slab: Option<SlabId>, base_el: Element,
 	) -> Self {
 		Self { ctx, slab, base_el, id, build_codes: BuildCodes::new(), ref_queue: Vec::new() }
 	}
-	/// returns the base [`Element`] of the chunk.
+	/// Returns the base [`Element`] of the chunk.
 	pub fn base_el(&self) -> Element {
 		self.base_el.clone()
 	}
 
-	/// applies the [`Applicable`] to current element.
+	/// Applies the [`Applicable`] to the current element.
 	///
-	/// see [`apply`](crate::apply) module for more information.
+	/// See the [`apply`](crate::apply) module for more information.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// build.apply(div((id("section"), text("hello world"))));
 	/// ```
@@ -89,11 +89,11 @@ impl<'ctx> ChunkBuild<'ctx> {
 		what.apply(self);
 	}
 
-	/// get a reference to the current element through a callback.
+	/// Gets a reference to the current element through a callback.
 	///
-	/// the callback will be called after the chunk is built but before the [`Element`] is returned.
+	/// The callback will be called after the chunk is built but before the [`Element`] is returned.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// build.ref_el(|ctx, el| println!("{}", el.text_content().unwrap()));
 	/// ```
@@ -101,11 +101,11 @@ impl<'ctx> ChunkBuild<'ctx> {
 		self.ref_queue.push((self.build_codes.request_id(), Box::new(fun)));
 	}
 
-	/// builds the chunk.
+	/// Builds the chunk.
 	///
-	/// the chunk is built in oneshot and get appended to the base [`Element`] that gets returned.
+	/// The chunk is built in one shot and appended to the base [`Element`] which gets returned.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let el = window().unwrap().document().unwrap().create_element("div").unwrap();
 	/// let mut build = root_build.ctx().new_chunk(el);
@@ -132,7 +132,7 @@ impl StoreProv for ChunkBuild<'_> {
 	}
 }
 impl ScopedStoreProv for ChunkBuild<'_> {
-	/// returns the [`SlabId`] of the chunk.
+	/// Returns the [`SlabId`] of the chunk.
 	fn slab(&self) -> Option<SlabId> {
 		self.slab
 	}
@@ -150,15 +150,15 @@ impl Debug for ChunkBuild<'_> {
 	}
 }
 
-/// a chunk that can be removed.
+/// A chunk that can be removed.
 ///
-/// `RemovableChunk` is a [`ChunkBuild`] having its own scope and being able to be removed when needed.
+/// `RemovableChunk` is a [`ChunkBuild`] that has its own scope and can be removed when needed.
 ///
-/// it implements [`Deref`] to [`ChunkBuild`], so all the functionality of [`ChunkBuild`] can be used.
+/// It implements [`Deref`] to [`ChunkBuild`] so all the functionality of [`ChunkBuild`] can be used.
 ///
-/// chunk doesnt get removed if it is dropped or its element is removed, an explicit call to [`remove`](ChunkRemover::remove) is required.
+/// The chunk does not get removed if it is dropped or if its element is removed. An explicit call to [`remove`](ChunkRemover::remove) is required.
 ///
-/// # example
+/// # Example
 /// ```
 /// let mut build = root_build.ctx().removable_chunk("div");
 /// chunk!(build, "hello world");
@@ -171,16 +171,16 @@ impl Debug for ChunkBuild<'_> {
 #[derive(Debug)]
 pub struct RemovableChunk<'ctx>(ChunkBuild<'ctx>);
 impl<'ctx> RemovableChunk<'ctx> {
-	/// creates a new [`RemovableChunk`]
+	/// Creates a new [`RemovableChunk`].
 	pub(crate) fn new(ctx: &'ctx mut DomContext, id: ChunkId, base_el: Element) -> Self {
 		let slab = ctx.store().create_slab();
 		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
-	/// build the chunk and export it as an [`Applicable`].
+	/// Builds the chunk and exports it as an [`Applicable`].
 	///
-	/// it builds the chunk then returns it as an [`Applicable`] that insert the chunk into another chunk and handle removing the chunk when the parent chunk is removed.
+	/// It builds the chunk and then returns it as an [`Applicable`] that inserts the chunk into another chunk and handles removing the chunk when the parent chunk is removed.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let mut build = root_build.ctx().removable_chunk("div");
 	/// chunk!(build, "hello world");
@@ -196,9 +196,9 @@ impl<'ctx> RemovableChunk<'ctx> {
 		}
 	}
 
-	/// build the chunk and return the [`Element`] and [`ChunkRemover`].
+	/// Builds the chunk and returns the [`Element`] and [`ChunkRemover`].
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let mut build = root_build.ctx().removable_chunk("div");
 	/// chunk!(build, "hello world");
@@ -227,9 +227,9 @@ impl<'ctx> DerefMut for RemovableChunk<'ctx> {
 	}
 }
 
-/// the remover of a [`RemovableChunk`].
+/// The remover of a [`RemovableChunk`].
 ///
-/// it can not be dropped, an explicit call to [`remove`](ChunkRemover::remove) is required to.
+/// It cannot be dropped. An explicit call to [`remove`](ChunkRemover::remove) is required.
 #[derive(Debug)]
 pub struct ChunkRemover {
 	id: ChunkId,
@@ -242,11 +242,11 @@ impl Drop for ChunkRemover {
 	}
 }
 impl ChunkRemover {
-	/// remove the chunk with its [`Element`] and [slab](Store#slab-management).
+	/// Removes the chunk with its [`Element`] and [slab](Store#slab-management).
 	///
-	/// this method is required to be called.
+	/// This method must be called.
 	///
-	/// # example
+	/// # Example
 	/// ```
 	/// let mut build = root_build.ctx().removable_chunk("div");
 	/// chunk!(build, "hello world");
