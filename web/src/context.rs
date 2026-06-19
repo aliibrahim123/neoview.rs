@@ -158,7 +158,7 @@ impl DomContext {
 	/// let (el, remover) = build.build();
 	/// let mut remover = Some(remover);
 	/// chunk!(root_build, el,
-	/// 	button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
+	///     button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
 	/// );
 	/// ```
 	pub fn removable_chunk(&mut self, tag: &str) -> RemovableChunk<'_> {
@@ -252,10 +252,10 @@ impl Drop for CtxHandle {
 /// # example
 /// ```
 /// fn on_event(event: Event) {
-/// 	let ctx = get_ctx(id).unwrap();
-/// 	let mut ctx = ctx.borrow_mut();
-/// 	// ...
-/// 	Store::flush_updates(ctx);
+///     let ctx = get_ctx(id).unwrap();
+///     let mut ctx = ctx.borrow_mut();
+///     // ...
+///     Store::flush_updates(ctx);
 /// }
 /// ```
 pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
@@ -274,9 +274,9 @@ pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 /// # example
 /// ```
 /// fn on_event(event: Event) {
-/// 	use_ctx(id, |ctx| {
-/// 		// ...
-/// 	}).unwrap();
+///     use_ctx(id, |ctx| {
+///         // ...
+///     }).unwrap();
 /// }
 /// ```
 pub fn use_ctx(id: ContextId, fun: impl FnOnce(&mut DomContext)) -> Result<(), ()> {

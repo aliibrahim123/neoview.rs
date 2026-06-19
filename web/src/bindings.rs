@@ -68,6 +68,11 @@ impl BasicAttrValue for str {
 		fun(Some(self))
 	}
 }
+impl BasicAttrValue for char {
+	fn with(&self, fun: impl FnOnce(Option<&str>)) {
+		fun(Some(self.encode_utf8(&mut [0; 4])))
+	}
+}
 impl BasicAttrValue for String {
 	fn with(&self, fun: impl FnOnce(Option<&str>)) {
 		fun(Some(&self))
@@ -87,7 +92,7 @@ macro_rules! basic_attr_int {
 		})*
 	};
 }
-basic_attr_int!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, char);
+basic_attr_int!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64);
 impl<T: BasicAttrValue> BasicAttrValue for &T {
 	fn with(&self, fun: impl FnOnce(Option<&str>)) {
 		(*self).with(fun)
@@ -305,6 +310,11 @@ impl BasicTextValue for String {
 		fun(self)
 	}
 }
+impl BasicTextValue for char {
+	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
+		fun(self.encode_utf8(&mut [0; 4]))
+	}
+}
 macro_rules! basic_text_primitive {
 	($($ty:ty),+) => {
 		$(impl BasicTextValue for $ty {
@@ -315,7 +325,7 @@ macro_rules! basic_text_primitive {
 	};
 }
 basic_text_primitive!(
-	bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, usize, u128, f32, f64, char
+	bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, usize, u128, f32, f64
 );
 impl<T: BasicTextValue> BasicTextValue for Option<T> {
 	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {

@@ -61,7 +61,7 @@
 //! ```
 //! // functions will be like
 //! fn fun(ctx: &mut DomContext, prop: PropId<String>) {
-//! 	println!("{}", ctx.read(prop));
+//!     println!("{}", ctx.read(prop));
 //! }
 //! ```
 //!
@@ -139,18 +139,18 @@
 //! You can also use any control flow you want, including imperative patterns. There are no components, only functions that borrow the context.
 //! ```
 //! fn counter(mut build: &mut ChunkBuild, name: &str) {
-//! 	let count = build.prop(0);
-//! 	chunk!(build, button(
-//! 		on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
-//! 	) { name, ": ", count });
+//!     let count = build.prop(0);
+//!     chunk!(build, button(
+//!         on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
+//!     ) { name, ": ", count });
 //! }
 //! // control flow is static not dynamic
 //! for i in 0..10 {
-//! 	counter(&mut build, &format!("counter {i}"));
-//! 	match i % 3 {
-//! 		0 | 1 => chunk!(build, br()),
-//! 		_ => chunk!(build, hr()),
-//! 	}
+//!     counter(&mut build, &format!("counter {i}"));
+//!     match i % 3 {
+//!         0 | 1 => chunk!(build, br()),
+//!         _ => chunk!(build, hr()),
+//!     }
 //! }
 //! ```
 //!
@@ -167,9 +167,9 @@
 //! ```
 //! let hidden = build.prop(true);
 //! chunk!(build,
-//! 	span(id: "an-element") { "text" }
-//! 	input(hidden)
-//! 	a(href: move |ctx| ctx.get(hidden).not().then_some("https://example.com")) { "link" }
+//!     span(id: "an-element") { "text" }
+//!     input(hidden)
+//!     a(href: move |ctx| ctx.get(hidden).not().then_some("https://example.com")) { "link" }
 //! );
 //! ```
 //!
@@ -181,9 +181,9 @@
 //! ```
 //! let hidden = build.prop(true);
 //! chunk!(build,
-//! 	span(class.hidden: hidden) { "text" }
-//! 	div(style.color: move |ctx| if ctx.get(hidden) { Some("red") } else { None }) { "other text" }
-//! 	button(on.click: (move |ctx, _| ctx.update(hidden, |v| *v = !*v))) { "toggle" }
+//!     span(class.hidden: hidden) { "text" }
+//!     div(style.color: move |ctx| if ctx.get(hidden) { Some("red") } else { None }) { "other text" }
+//!     button(on.click: (move |ctx, _| ctx.update(hidden, |v| *v = !*v))) { "toggle" }
 //! );
 //! ```
 //!
@@ -191,10 +191,10 @@
 //! ```
 //! let text = build.prop(String::from("abc"));
 //! chunk!(build, div {
-//! 	span { "text" },
-//! 	1 + 2,
-//! 	text,
-//! 	move |ctx| ctx.read(text).len(),
+//!     span { "text" },
+//!     1 + 2,
+//!     text,
+//!     move |ctx| ctx.read(text).len(),
 //! });
 //! ```
 //! Children can also be a do block, which are code blocks that get evaluated at the point they are defined.
@@ -204,14 +204,14 @@
 //! There are shorthands for `if`, `for`, and `match` expressions.
 //! ```
 //! chunk!(build, div {
-//! 	"part 1, "
-//! 	do {
-//! 		chunk!(build, "part 2, " )
-//! 	}
-//! 	for i in 0..10 {
-//! 		chunk!(build, "part ", i + 2, ", ")
-//! 	}
-//! 	"part 13"
+//!     "part 1, "
+//!     do {
+//!         chunk!(build, "part 2, " )
+//!     }
+//!     for i in 0..10 {
+//!         chunk!(build, "part ", i + 2, ", ")
+//!     }
+//!     "part 13"
 //! });
 //! ```
 //!
@@ -220,19 +220,19 @@
 //! ```
 //! let count = build.prop(0);
 //! build.apply(button((
-//! 	on("click", move |ctx, _| ctx.update(count, |v| *v += 1)),
-//! 	text(count),
+//!     on("click", move |ctx, _| ctx.update(count, |v| *v += 1)),
+//!     text(count),
 //! )));
 //! ```
 //!
 //! Reactive conditional rendering is done using [`show_if`](apply::show_if), while list rendering is done using [`render_list`].
 //! ```
 //! chunk!(build, div {
-//! 	do {
-//! 		let list = build.prop(vec![1, 2, 3]);
-//! 		build.apply(show_if(move |ctx: &mut DomContext| ctx.read(list).len() > 0));
-//! 		render_list(build, list, |v| *v, "div", |mut build, v| chunk!(build, v));
-//! 	}
+//!     do {
+//!         let list = build.prop(vec![1, 2, 3]);
+//!         build.apply(show_if(move |ctx: &mut DomContext| ctx.read(list).len() > 0));
+//!         render_list(build, list, |v| *v, "div", |mut build, v| chunk!(build, v));
+//!     }
 //! });
 //! ```
 //!

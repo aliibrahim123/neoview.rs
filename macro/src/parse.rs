@@ -62,6 +62,8 @@ pub struct Element {
 #[derive(Debug)]
 pub struct ChunkInput {
 	pub build: Vec<TokenTree>,
+	/// the build variable identifier.
+	pub build_ident: Ident,
 	pub children: Vec<Child>,
 }
 
@@ -162,6 +164,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 				&& matches!(&attr[..], [TokenTree::Ident(_)])
 			{
 				attrs.push((attr.clone(), attr));
+				cur.try_punct(',');
 				continue;
 			}
 			cur.punct(':')?;
@@ -200,12 +203,16 @@ pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
 	if build.is_empty() {
 		return err!("expected an expression", cur.peek().span());
 	}
+	let build_ident = match &build[..] {
+		[TokenTree::Ident(ident)] => ident.clone(),
+		_ => Ident::new("__build", Span::call_site()),
+	};
 	cur.punct(',')?;
 
-	let nodes = parse_children(&mut cur)?;
-	if nodes.is_empty() {
+	let children = parse_children(&mut cur)?;
+	if children.is_empty() {
 		return err!("expected an element, expression or a do block", cur.peek().span());
 	}
 
-	Ok(ChunkInput { build, children: nodes })
+	Ok(ChunkInput { build, build_ident, children })
 }

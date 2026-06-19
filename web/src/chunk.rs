@@ -165,7 +165,7 @@ impl Debug for ChunkBuild<'_> {
 /// let (el, remover) = build.build();
 /// let mut remover = Some(remover);
 /// chunk!(root_build, el,
-/// 	button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
+///     button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
 /// );
 /// ```
 #[derive(Debug)]
@@ -205,7 +205,7 @@ impl<'ctx> RemovableChunk<'ctx> {
 	/// let (el, remover) = build.build();
 	/// let mut remover = Some(remover);
 	/// chunk!(root_build, el,
-	/// 	button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
+	///     button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
 	/// );
 	/// ```
 	pub fn build(self) -> (Element, ChunkRemover) {
@@ -253,7 +253,7 @@ impl ChunkRemover {
 	/// let (el, remover) = build.build();
 	/// let mut remover = Some(remover);
 	/// chunk!(root_build, el,
-	/// 	button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
+	///     button(on.click: (move |ctx, _| remover.take().unwrap().remove(ctx))) { "remove" }
 	/// );
 	/// ```
 	pub fn remove(self, ctx: &mut DomContext) {

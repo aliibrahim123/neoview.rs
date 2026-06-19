@@ -18,7 +18,7 @@ fn chunk_impl(input: TokenStream2) -> Result<TokenStream2, Error> {
 	Ok(encode(input))
 }
 
-/// Constructs a UI chunk in an expressive, object-like syntax.
+#[doc(hidden)]
 #[proc_macro]
 pub fn chunk(input: TokenStream) -> TokenStream {
 	match chunk_impl(input.into()) {
