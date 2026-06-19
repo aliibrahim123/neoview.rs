@@ -1,3 +1,4 @@
+//! list rendering through [`render_list`]
 use std::{
 	borrow::Cow,
 	cell::{RefCell, RefMut},
@@ -12,6 +13,32 @@ use web_sys::Element;
 
 use crate::{chunk::ChunkRemover, context::DomContext, prelude::ChunkBuild};
 
+/// dynamic list rendering primitive.
+///
+/// the `render_list` function take a reactive property containing a list and construct each item into the curent element.
+///
+/// when the list changes, `render_list` patch the ui by constructing the new items, removing the old ones and moving the required ones.
+///
+/// the list is any type impliminting [`AsRef<[T]>`](AsRef), and a `key_fn` that returns a unique key for each item is requried since diff is based on the simple keys for performance reasons.
+///
+/// an item ui is constructed by creating a `tag` element then targeting it with a [`ChunkBuild`] having its own scope and passing the build with the item to the `item_chunk` function, after that builing the build and inserting the element into the ui.
+///
+/// # example
+/// ```
+/// #[derive(Clone)]
+/// struct User { id: u32, name: String, age: u32 }
+/// let users = read_users(build);
+/// render_list(build, users, |v| v.id, "div", |mut build, user| {
+///	    chunk!(build, "user ", user.id, ": name = ", user.name, ", age = ", user.age);
+/// });
+/// ```
+///
+/// # Notes
+/// note that keys must be unique, the renderer handle deplicate keys fully but the state of the ui will be unpredictable, and multiple items having the same key may have different fields leading to chous.
+///
+/// all item chunks will be removed when the parent chunk is removed.
+///
+/// for dynamic indexes, see [`render_list_enumerated`].
 pub fn render_list<T: Clone, K: Eq + Hash + 'static>(
 	build: &mut ChunkBuild, prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
 	tag: impl Into<Cow<'static, str>>, mut item_chunk: impl FnMut(&mut ChunkBuild, T) + 'static,
@@ -22,6 +49,20 @@ pub fn render_list<T: Clone, K: Eq + Hash + 'static>(
 		move |build, item, _| item_chunk(build, item),
 	);
 }
+
+/// like [`render_list`] but with dynamic indexes.
+///
+/// the `render_list_enumerated` is exactly like the normal [`render_list`] except additional reactive property reflecting the index of the item in the list is passed to the `item_chunk`.
+///
+/// # example
+/// ```
+/// #[derive(Clone)]
+/// struct User { id: u32, name: String, age: u32 }
+/// let users = read_users(build);
+/// render_list_enumerated(build, users, |v| v.id, "div", |mut build, user, index| {
+///	   chunk!(build, index, "- user ", user.id, ": name = ", user.name, ", age = ", user.age);
+/// });
+/// ```
 pub fn render_list_enumerated<T: Clone, K: Eq + Hash + 'static>(
 	build: &mut ChunkBuild, prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
 	tag: impl Into<Cow<'static, str>>,
@@ -33,37 +74,48 @@ pub fn render_list_enumerated<T: Clone, K: Eq + Hash + 'static>(
         move |build, item, index| item_chunk(build, item, index.unwrap()),
     );
 }
-fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
-	build: &mut ChunkBuild, prop: PropId<TCont>, key_fn: impl Fn(&T) -> K + 'static,
+
+/// the implementation of [`render_list`] and [`render_list_enumerated`].
+///
+/// `enumated` is a flag for giving the `item_chunk` the index of the item.
+fn render_list_core<T: Clone, K: Eq + Hash + 'static>(
+	build: &mut ChunkBuild, prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
 	enumerate: bool, tag: impl Into<Cow<'static, str>>,
 	mut item_chunk: impl FnMut(&mut ChunkBuild, T, Option<PropId<usize>>) + 'static,
 ) {
 	let tag = tag.into();
 	let len = build.read(prop).as_ref().len();
-	let mut old_items = Vec::with_capacity(len);
-	let mut old_keys = Vec::with_capacity(len);
+	// stored inside an `Option` for taking without move.
+	let mut items = Vec::with_capacity(len);
+	let mut keys = Vec::with_capacity(len);
 
+	// init render
 	for ind in 0..len {
 		let item = build.read(prop).as_ref()[ind].clone();
-		old_keys.push(key_fn(&item));
+		keys.push(key_fn(&item));
+
 		let item = build_item(build.ctx(), &tag, item, enumerate.then_some(ind), &mut item_chunk);
 		build.build_codes.node(item.el.clone().into());
-		old_items.push(Some(item))
+
+		items.push(Some(item))
 	}
 
-	let old_items = Rc::new(RefCell::new(old_items));
-	let old_items_clone = old_items.clone();
+	// it is used by the patcher effect and the remover
+	let items = Rc::new(RefCell::new(items));
+	let items_clone = items.clone();
 
 	let slab = build.slab();
 	build.ref_el(move |ctx, parent| {
 		let parent = parent.clone();
-		let fun = move |ctx: &mut DomContext| {
+
+		let patcher = move |ctx: &mut DomContext| {
 			let list = ctx.read(prop).as_ref();
 			let new_keys: Vec<_> = list.iter().map(|v| key_fn(v)).collect();
 			let mut new_items = (0..list.len()).map(|_| None).collect();
-			let mut differ = Differ {
+
+			let mut patcher = Patcher {
 				ctx,
-				old_items: old_items.borrow_mut(),
+				old_items: items.borrow_mut(),
 				parent: &parent,
 				new_items: &mut new_items,
 				item_builder: |ctx, ind| {
@@ -71,14 +123,17 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 					build_item(ctx, &tag, item, enumerate.then_some(ind), &mut item_chunk)
 				},
 			};
-			diff(&old_keys, &new_keys, &mut differ);
-			drop(differ);
-			(*old_items.borrow_mut(), old_keys) = (new_items, new_keys);
+			diff(&keys, &new_keys, &mut patcher);
+
+			drop(patcher);
+			(*items.borrow_mut(), keys) = (new_items, new_keys);
 		};
+		// run the patcher after the chunk is built since the list may had been changed
 		let ty = Manual { read: vec![prop.erase_type()], write: Vec::new(), init_run: true };
-		Store::effect(ctx, slab, ty, fun).unwrap();
+		Store::effect(ctx, slab, ty, patcher).unwrap();
+
 		let remover = move |ctx: &mut DomContext| {
-			for item in old_items_clone.borrow_mut().drain(..) {
+			for item in items_clone.borrow_mut().drain(..) {
 				item.unwrap().remover.remove(ctx);
 			}
 		};
@@ -86,12 +141,17 @@ fn render_list_core<T: Clone, TCont: AsRef<[T]>, K: Eq + Hash + 'static>(
 	});
 }
 
+/// an item in the list
 struct Item {
+	/// its element
 	el: Element,
+	/// the index prop if needed
 	index: Option<PropId<usize>>,
+	/// the item chunk remover
 	remover: ChunkRemover,
 }
 
+/// construct the ui of an item
 fn build_item<T>(
 	ctx: &mut DomContext, tag: &str, item: T, ind: Option<usize>,
 	item_chunk: &mut impl FnMut(&mut ChunkBuild, T, Option<PropId<usize>>),
@@ -103,16 +163,18 @@ fn build_item<T>(
 	Item { el, index, remover }
 }
 
-struct Differ<'a, F: FnMut(&mut DomContext, usize) -> Item> {
+/// patch the list ui
+struct Patcher<'a, F: FnMut(&mut DomContext, usize) -> Item> {
 	ctx: &'a mut DomContext,
 	parent: &'a Element,
 	old_items: RefMut<'a, Vec<Option<Item>>>,
 	new_items: &'a mut Vec<Option<Item>>,
 	item_builder: F,
 }
-impl<F: FnMut(&mut DomContext, usize) -> Item> ReconcileOps for Differ<'_, F> {
+impl<F: FnMut(&mut DomContext, usize) -> Item> ReconcileOps for Patcher<'_, F> {
 	fn insert(&mut self, new_ind: usize, reference: Option<usize>) {
 		let item = (self.item_builder)(self.ctx, new_ind);
+
 		match reference {
 			Some(before) => {
 				let el = &self.new_items[before].as_ref().unwrap().el;
@@ -120,6 +182,7 @@ impl<F: FnMut(&mut DomContext, usize) -> Item> ReconcileOps for Differ<'_, F> {
 			}
 			None => self.parent.append_with_node_1(&item.el).unwrap(),
 		}
+
 		self.new_items[new_ind] = Some(item);
 	}
 	fn _move(&mut self, new_ind: usize, reference: Option<usize>) {
@@ -135,12 +198,14 @@ impl<F: FnMut(&mut DomContext, usize) -> Item> ReconcileOps for Differ<'_, F> {
 	fn remove(&mut self, old_ind: usize) {
 		self.old_items[old_ind].take().unwrap().remover.remove(self.ctx);
 	}
+	/// update the index and move to new_items
 	fn set_index(&mut self, old_ind: usize, new_ind: usize) {
 		let item = self.old_items[old_ind].take().unwrap();
 		if let Some(index) = item.index
 			&& old_ind != new_ind
 		{
 			self.ctx.write(index, new_ind);
+			// we are in an effect
 			self.ctx.store().force_update(index);
 		}
 		self.new_items[new_ind] = Some(item);
@@ -163,6 +228,7 @@ pub trait ReconcileOps {
 	fn set_index(&mut self, old_ind: usize, new_ind: usize);
 }
 
+/// compute the diff between two lists
 pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 	let old_len = old.len();
 	let new_len = new.len();
@@ -187,8 +253,8 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 	if start == old_end {
 		// Only insertions remain.
 		for ind in start..new_end {
-			let ref_idx = (new_end < new_len).then_some(new_end);
-			ops.insert(ind, ref_idx);
+			let ref_ind = (new_end < new_len).then_some(new_end);
+			ops.insert(ind, ref_ind);
 		}
 	} else if start == new_end {
 		// Only removals remain.
@@ -198,8 +264,8 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 	} else {
 		// 4. Map Phase: Build a map of the remaining new items.
 		let new_left = new_end - start;
+		// T -> new ind
 		let mut new_ind_map = HashMap::with_capacity_and_hasher(new_left, FxBuildHasher);
-
 		let mut next_duplicate = vec![None; new_left];
 
 		for ind in (start..new_end).rev() {
@@ -211,35 +277,37 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 
 		// Tracks where new items came from. `0` means it's a brand new item.
 		let mut sources = vec![0isize; new_left];
-		let mut moved = false;
+		let mut some_moved = false;
 		let mut pos = 0;
-		let mut patched = 0;
+		// without removed
+		let mut items_patched = 0;
 
 		// Find which old items are kept, moved, or removed.
 		for ind in start..old_end {
-			if patched >= new_left {
+			// no more new items, remove
+			if items_patched >= new_left {
 				ops.remove(ind);
 				continue;
 			}
 
 			if let Some(new_ind) = new_ind_map.remove(&old[ind]) {
-				let source_idx = new_ind - start;
+				let source_ind = new_ind - start;
 
-				if let Some(next_ind) = next_duplicate[source_idx] {
+				if let Some(next_ind) = next_duplicate[source_ind] {
 					new_ind_map.insert(&new[next_ind], next_ind);
 				}
 
 				// Item is kept. Record its old index (+1 to reserve 0 for "new").
-				sources[source_idx] = (ind + 1) as isize;
+				sources[source_ind] = (ind + 1) as isize;
 				ops.set_index(ind, new_ind);
 
 				// If a new index is smaller than a previous one, items crossed paths (moved).
 				if new_ind >= pos {
 					pos = new_ind;
 				} else {
-					moved = true;
+					some_moved = true;
 				}
-				patched += 1;
+				items_patched += 1;
 				continue;
 			}
 
@@ -248,12 +316,12 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 		}
 
 		// 5. Patch Phase: Apply DOM mutations backwards.
-		// We iterate backwards so the `reference` node is always already in its final position.
-		if moved {
-			// Find the longest sequence of items that don't need to move (Anchors).
+		if some_moved {
+			// Find the longest sequence of items that don't need to move.
 			let seq = longest_increasing_subsequence(&sources);
 			let mut j = seq.len() as isize - 1;
 
+			// in reverse to make `reference` always in its final position
 			for ind in (0..new_left).rev() {
 				let new_ind = start + ind;
 				let ref_ind = (new_ind + 1 < new_len).then_some(new_ind + 1);
@@ -303,7 +371,6 @@ fn longest_increasing_subsequence(a: &[isize]) -> Vec<usize> {
 			continue;
 		}
 
-		// Binary search to find the correct insertion point to replace an existing tail.
 		let pos = result.partition_point(|&idx| a[idx] < a[ind]);
 
 		if pos > 0 {

@@ -278,6 +278,8 @@ pub use {
 	list_render::{render_list, render_list_enumerated},
 	neoview,
 };
+
+/// `neoview-web` prelude.
 pub mod prelude {
 	pub use crate::{
 		__private::chunk_export as chunk, ChunkBuild, DomContext, build_codes::__buildcode,
