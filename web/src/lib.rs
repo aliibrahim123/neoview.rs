@@ -8,7 +8,7 @@
 //! Like every [`neoview`] renderer, it utilizes the efficiency of [fine-grained reactivity](neoview#reactive-system), the safety of [context passing](neoview#reactive-system), and the ergonomics of [chunked templating](neoview#templating) to provide high-level expressiveness with low-level robustness.
 //!
 //! # Features
-//! `neoview-web` features its own context, [`DomContext`]; it borrows the reactive system from [`neoview`] and provides its own flavor of the [`chunk`](macro@chunk) macro with full HTML support.
+//! `neoview-web` features its own context, [`DomContext`], it borrows the reactive system from [`neoview`] and provides its own flavor of the [`chunk`](macro@chunk) macro with full HTML support.
 //!
 //! In addition to the feature-richness of [`chunk`](macro@chunk), `neoview-web` includes [conditional rendering](apply::show_if), [list rendering](render_list), a [builder pattern](apply) for templating, and [IntelliSense for tags, attributes, events, and CSS properties](#html-types).
 //!
