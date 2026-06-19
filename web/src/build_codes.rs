@@ -426,10 +426,9 @@ pub mod __buildcode {
 
 	use crate::prelude::{ChunkBuild, DomContext};
 
+	pub(crate) type EventFn = Box<dyn FnMut(&mut DomContext, Event)>;
 	#[doc(hidden)]
-	pub fn add_event(
-		build: &mut ChunkBuild, event: &str, fun: Box<dyn FnMut(&mut DomContext, Event)>,
-	) {
+	pub fn add_event(build: &mut ChunkBuild, event: &str, fun: EventFn) {
 		let events = &mut build.ctx.chunks[build.id].events;
 		build.build_codes.event(build.ctx.id, build.id, event, events.len() as u64);
 		events.push(Some(fun));

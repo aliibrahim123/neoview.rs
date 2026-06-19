@@ -78,30 +78,31 @@ pub struct DomContext {
 	/// The chunks of the `DomContext`.
 	pub(crate) chunks: SlotMap<ChunkId, Chunk>,
 }
-impl DomContext {
-	/// Creates a new `DomContext`.
-	///
-	/// This function creates a new `DomContext` wrapping a given root [`Element`] and taking [`CtxOptions`], and it returns a [`CtxHandle`] to it.
-	///
-	/// The root element can be in the DOM tree or outside it. It can be an HTML element, an SVG element, or any other element.
-	///
-	/// # Example
-	/// ```
-	/// let el = windows().unwrap().document().unwrap().create_element("div").unwrap();
-	/// let handle = DomContext::new(el, CtxOptions::default());
-	/// let ctx = handle.borrow_mut();
-	/// ```
-	pub fn new(root_el: Element, opts: CtxOptions) -> CtxHandle {
-		let ctx = DomContext {
-			id: ContextId::next(),
-			options: opts,
-			root_el,
-			store: Store::default(),
-			chunks: SlotMap::default(),
-		};
-		CtxHandle::new(ctx)
-	}
 
+/// Creates a new [`DomContext`].
+///
+/// This function creates a new [`DomContext`] wrapping a given root [`Element`] and taking [`CtxOptions`], and it returns a [`CtxHandle`] to it.
+///
+/// The root element can be in the DOM tree or outside it. It can be an HTML element, an SVG element, or any other element.
+///
+/// # Example
+/// ```
+/// let el = windows().unwrap().document().unwrap().create_element("div").unwrap();
+/// let handle = DomContext::new(el, CtxOptions::default());
+/// let ctx = handle.borrow_mut();
+/// ```
+pub fn new_ctx(root_el: Element, opts: CtxOptions) -> CtxHandle {
+	let ctx = DomContext {
+		id: ContextId::next(),
+		options: opts,
+		root_el,
+		store: Store::default(),
+		chunks: SlotMap::default(),
+	};
+	CtxHandle::new(ctx)
+}
+
+impl DomContext {
 	/// Returns the [`ContextId`] of this `DomContext`.
 	pub fn id(&self) -> ContextId {
 		self.id
@@ -279,6 +280,7 @@ pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 ///     }).unwrap();
 /// }
 /// ```
+#[allow(clippy::result_unit_err)]
 pub fn use_ctx(id: ContextId, fun: impl FnOnce(&mut DomContext)) -> Result<(), ()> {
 	let ctx = get_ctx(id).ok_or(())?;
 	let mut ctx = ctx.borrow_mut();

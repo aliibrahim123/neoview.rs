@@ -1,9 +1,14 @@
+//! proc macro helpers for [`nooview-web`](https://docs.rs/nooview-web/latest/nooview_web/)
 use std::{env::var_os, fs::read_to_string, path::PathBuf};
 
 use proc_macro::{TokenStream, TokenTree};
 use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::quote;
 
+/// Converts snake case tokens into kebab case str literal.
+///
+/// - `a_b_c` -> `"a-b-c"`
+/// - `a-b-c` -> `"a-b-c"`
 #[proc_macro]
 pub fn kababify(input: TokenStream) -> TokenStream {
 	let mut input = input.into_iter();
@@ -14,12 +19,15 @@ pub fn kababify(input: TokenStream) -> TokenStream {
 		parts.push(ident);
 	}
 
+	// a_b_c
 	if parts.len() == 1 {
 		let snake = &parts[0];
 		let mut kebab = Literal::string(&snake.to_string().replace('_', "-"));
 		kebab.set_span(snake.span().into());
 		quote! { #kebab }.into()
-	} else {
+	}
+	// a-b-c
+	else {
 		let mut kebab = parts[0].to_string();
 		for part in &parts[1..] {
 			kebab.push('-');
@@ -30,11 +38,14 @@ pub fn kababify(input: TokenStream) -> TokenStream {
 	}
 }
 
+/// insert `#[wasm_bindgen(inline_js = ...)]` from a file in the build dir.
+///
+/// syntax: `#[wasm_bindgen_from_build("path/to/file.js")]`
 #[proc_macro_attribute]
 pub fn wasm_bindgen_from_build(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let mut attr = attr.into_iter();
 	let TokenTree::Literal(lit) = attr.next().unwrap() else { panic!() };
-	let lit = lit.to_string();
+	let lit = lit.to_string(); // have quotes
 
 	let mut path = PathBuf::from(var_os("OUT_DIR").unwrap());
 	path.push(&lit[1..lit.len() - 1]);

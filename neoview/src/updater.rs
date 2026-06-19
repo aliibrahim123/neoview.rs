@@ -45,6 +45,7 @@ impl<Ctx> Default for Updater<Ctx> {
 		}
 	}
 }
+type PropVec = Vec<PropId<()>>;
 impl<Ctx: Context> Updater<Ctx> {
 	/// mark a property dirty, outside effects
 	pub fn push_update(&mut self, id: ItemId) {
@@ -54,8 +55,8 @@ impl<Ctx: Context> Updater<Ctx> {
 	}
 
 	pub fn add_effect(
-		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) + 'static,
-		deps: Option<(Vec<PropId<()>>, Vec<PropId<()>>)>, init_run: bool,
+		ctx: &mut Ctx, mut fun: impl FnMut(&mut Ctx) + 'static, deps: Option<(PropVec, PropVec)>,
+		init_run: bool,
 	) -> ItemId {
 		// gather deps
 		if deps.is_none() {

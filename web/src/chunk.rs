@@ -6,9 +6,11 @@ use std::{
 
 use neoview::{ScopedStoreProv, SlabId, Store, StoreProv};
 use slotmap::new_key_type;
-use web_sys::{Element, Event};
+use web_sys::Element;
 
-use crate::{apply::Applicable, build_codes::BuildCodes, context::DomContext};
+use crate::{
+	apply::Applicable, build_codes::BuildCodes, context::DomContext, prelude::__buildcode::EventFn,
+};
 
 new_key_type!(
 	/// A unique identifier for a chunk.
@@ -20,7 +22,7 @@ new_key_type!(
 pub struct Chunk {
 	pub elements: Vec<Element>,
 	/// Event listeners.
-	pub events: Vec<Option<Box<dyn FnMut(&mut DomContext, Event)>>>,
+	pub events: Vec<Option<EventFn>>,
 }
 impl Debug for Chunk {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -63,8 +65,9 @@ pub struct ChunkBuild<'ctx> {
 	#[doc(hidden)]
 	pub build_codes: BuildCodes,
 	/// A queue of `ref_el` callbacks: (el_id, fun).
-	ref_queue: Vec<(u64, Box<dyn FnOnce(&mut DomContext, &Element)>)>,
+	ref_queue: Vec<(u64, RefFn)>,
 }
+type RefFn = Box<dyn FnOnce(&mut DomContext, &Element)>;
 impl<'ctx> ChunkBuild<'ctx> {
 	/// Creates a new [`ChunkBuild`].
 	pub(crate) fn new(

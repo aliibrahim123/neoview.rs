@@ -75,7 +75,7 @@ impl BasicAttrValue for char {
 }
 impl BasicAttrValue for String {
 	fn with(&self, fun: impl FnOnce(Option<&str>)) {
-		fun(Some(&self))
+		fun(Some(self))
 	}
 }
 impl BasicAttrValue for bool {
@@ -115,14 +115,18 @@ pub trait AttrValue<Value> {
 impl<T: BasicAttrValue> AttrValue<Static> for T {
 	fn apply(self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
 		self.with(|value| {
-			value.map(|value| build.build_codes.attr(&name, value));
+			if let Some(value) = value {
+				build.build_codes.attr(&name, value)
+			}
 		});
 	}
 }
 impl<T: BasicAttrValue> AttrValue<Prop> for PropId<T> {
 	fn apply(self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
 		build.ctx.read(self).with(|value| {
-			value.map(|value| build.build_codes.attr(&name, value));
+			if let Some(value) = value {
+				build.build_codes.attr(&name, value)
+			}
 		});
 
 		add_effect_with_el(build, vec![self.erase_type()], vec![], move |ctx, chunk, el| {
@@ -141,7 +145,9 @@ impl<T: BasicAttrValue, F: FnMut(&mut DomContext) -> T + 'static> AttrValue<Comp
 	fn apply(mut self, build: &mut ChunkBuild<'_>, name: Cow<'static, str>) {
 		let (value, TrackResult { read, written }) = call_with_track(build, &mut self);
 		value.with(|value| {
-			value.map(|value| build.build_codes.attr(&name, value));
+			if let Some(value) = value {
+				build.build_codes.attr(&name, value)
+			}
 		});
 
 		add_effect_with_el(build, read, written, move |ctx, chunk, el| {
@@ -207,12 +213,12 @@ impl BasicStyleValue for str {
 }
 impl BasicStyleValue for &str {
 	fn to_str(&self) -> &str {
-		*self
+		self
 	}
 }
 impl BasicStyleValue for String {
 	fn to_str(&self) -> &str {
-		&self
+		self
 	}
 }
 impl<T: BasicStyleValue> BasicStyleValue for Option<T> {
@@ -302,7 +308,7 @@ impl BasicTextValue for str {
 }
 impl BasicTextValue for &str {
 	fn with<R>(&self, fun: impl FnOnce(&str) -> R) -> R {
-		fun(*self)
+		fun(self)
 	}
 }
 impl BasicTextValue for String {
@@ -345,7 +351,7 @@ pub trait TextValue<Value> {
 impl<T: BasicTextValue> TextValue<Static> for T {
 	fn apply(self, build: &mut ChunkBuild<'_>) {
 		self.with(|value| {
-			(value != "").then(|| build.build_codes.text(value));
+			(!value.is_empty()).then(|| build.build_codes.text(value));
 		});
 	}
 }

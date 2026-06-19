@@ -29,7 +29,7 @@ use crate::{chunk::ChunkRemover, context::DomContext, prelude::ChunkBuild};
 /// struct User { id: u32, name: String, age: u32 }
 /// let users = read_users(build);
 /// render_list(build, users, |v| v.id, "div", |mut build, user| {
-///	    chunk!(build, "user ", user.id, ": name = ", user.name, ", age = ", user.age);
+///     chunk!(build, "user ", user.id, ": name = ", user.name, ", age = ", user.age);
 /// });
 /// ```
 ///
@@ -60,7 +60,7 @@ pub fn render_list<T: Clone, K: Eq + Hash + 'static>(
 /// struct User { id: u32, name: String, age: u32 }
 /// let users = read_users(build);
 /// render_list_enumerated(build, users, |v| v.id, "div", |mut build, user, index| {
-///	   chunk!(build, index, "- user ", user.id, ": name = ", user.name, ", age = ", user.age);
+///     chunk!(build, index, "- user ", user.id, ": name = ", user.name, ", age = ", user.age);
 /// });
 /// ```
 pub fn render_list_enumerated<T: Clone, K: Eq + Hash + 'static>(
@@ -110,6 +110,7 @@ fn render_list_core<T: Clone, K: Eq + Hash + 'static>(
 
 		let patcher = move |ctx: &mut DomContext| {
 			let list = ctx.read(prop).as_ref();
+			#[allow(clippy::redundant_closure)]
 			let new_keys: Vec<_> = list.iter().map(|v| key_fn(v)).collect();
 			let mut new_items = (0..list.len()).map(|_| None).collect();
 
@@ -156,7 +157,7 @@ fn build_item<T>(
 	ctx: &mut DomContext, tag: &str, item: T, ind: Option<usize>,
 	item_chunk: &mut impl FnMut(&mut ChunkBuild, T, Option<PropId<usize>>),
 ) -> Item {
-	let mut chunk = ctx.removable_chunk(&tag);
+	let mut chunk = ctx.removable_chunk(tag);
 	let index = ind.map(|ind| chunk.prop(ind));
 	item_chunk(&mut chunk, item, index);
 	let (el, remover) = chunk.build();
@@ -283,6 +284,7 @@ pub fn diff<T: Eq + Hash, O: ReconcileOps>(old: &[T], new: &[T], ops: &mut O) {
 		let mut items_patched = 0;
 
 		// Find which old items are kept, moved, or removed.
+		#[allow(clippy::needless_range_loop)]
 		for ind in start..old_end {
 			// no more new items, remove
 			if items_patched >= new_left {
