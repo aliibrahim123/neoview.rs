@@ -1,5 +1,6 @@
 //! define item ids
 use std::{
+	any::{Any, TypeId},
 	fmt::{Debug, Display},
 	hash::Hash,
 	marker::PhantomData,
@@ -111,5 +112,144 @@ impl Display for SlabId {
 impl Debug for SlabId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "SlabId({:#})", self)
+	}
+}
+
+/// the property value storage unit.
+///
+/// optimized for primitive.
+#[derive(Debug)]
+pub enum PropValue {
+	Unit(()),
+	Bool(bool),
+	Char(char),
+	U8(u8),
+	U16(u16),
+	U32(u32),
+	U64(u64),
+	USize(usize),
+	I8(i8),
+	I16(i16),
+	I32(i32),
+	I64(i64),
+	ISize(isize),
+	F32(f32),
+	F64(f64),
+	Str(String),
+	Any(Box<dyn Any>),
+}
+impl PropValue {
+	/// create a new `PropValue` from a value.
+	pub fn new<T: 'static>(value: T) -> Self {
+		let id = TypeId::of::<T>();
+
+		macro_rules! try_cast {
+			($ty:ty, $var:ident) => {
+				if id == TypeId::of::<$ty>() {
+					unsafe {
+						let casted = std::ptr::read(&value as *const T as *const $ty);
+						std::mem::forget(value);
+						return PropValue::$var(casted);
+					}
+				}
+			};
+		}
+
+		try_cast!((), Unit);
+		try_cast!(bool, Bool);
+		try_cast!(char, Char);
+		try_cast!(u8, U8);
+		try_cast!(u16, U16);
+		try_cast!(u32, U32);
+		try_cast!(u64, U64);
+		try_cast!(usize, USize);
+		try_cast!(i8, I8);
+		try_cast!(i16, I16);
+		try_cast!(i32, I32);
+		try_cast!(i64, I64);
+		try_cast!(isize, ISize);
+		try_cast!(f32, F32);
+		try_cast!(f64, F64);
+		try_cast!(String, Str);
+
+		PropValue::Any(Box::new(value))
+	}
+	/// get the value of the `PropValue`.
+	pub fn get<T: 'static>(&self) -> &T {
+		let id = TypeId::of::<T>();
+
+		macro_rules! try_get {
+			($ty:ty, $var:ident) => {
+				if id == TypeId::of::<$ty>() {
+					match self {
+						PropValue::$var(val) => {
+							return unsafe { &*(val as *const $ty as *const T) };
+						}
+						_ => unreachable!(),
+					}
+				}
+			};
+		}
+
+		try_get!((), Unit);
+		try_get!(bool, Bool);
+		try_get!(char, Char);
+		try_get!(u8, U8);
+		try_get!(u16, U16);
+		try_get!(u32, U32);
+		try_get!(u64, U64);
+		try_get!(usize, USize);
+		try_get!(i8, I8);
+		try_get!(i16, I16);
+		try_get!(i32, I32);
+		try_get!(i64, I64);
+		try_get!(isize, ISize);
+		try_get!(f32, F32);
+		try_get!(f64, F64);
+		try_get!(String, Str);
+
+		match self {
+			PropValue::Any(val) => val.downcast_ref::<T>().unwrap(),
+			_ => unreachable!(),
+		}
+	}
+	/// get the mutable value of the `PropValue`.
+	pub fn get_mut<T: 'static>(&mut self) -> &mut T {
+		let id = TypeId::of::<T>();
+
+		macro_rules! try_get_mut {
+			($ty:ty, $var:ident) => {
+				if id == TypeId::of::<$ty>() {
+					match self {
+						PropValue::$var(val) => {
+							return unsafe { &mut *(val as *mut $ty as *mut T) };
+						}
+						_ => unreachable!(),
+					}
+				}
+			};
+		}
+
+		try_get_mut!((), Unit);
+		try_get_mut!(bool, Bool);
+		try_get_mut!(char, Char);
+		try_get_mut!(u8, U8);
+		try_get_mut!(u16, U16);
+		try_get_mut!(u32, U32);
+		try_get_mut!(u64, U64);
+		try_get_mut!(usize, USize);
+		try_get_mut!(i8, I8);
+		try_get_mut!(i16, I16);
+		try_get_mut!(i32, I32);
+		try_get_mut!(i64, I64);
+		try_get_mut!(isize, ISize);
+		try_get_mut!(f32, F32);
+		try_get_mut!(f64, F64);
+		try_get_mut!(String, Str);
+
+		match self {
+			PropValue::Any(val) => val.downcast_mut::<T>().unwrap(),
+			_ => unreachable!(),
+		}
 	}
 }

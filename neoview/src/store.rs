@@ -1,6 +1,6 @@
 //! Defines the [`Store`]
 
-use std::{any::Any, cell::RefCell, fmt::Debug, ops::DerefMut, ptr};
+use std::{cell::RefCell, fmt::Debug, ops::DerefMut, ptr};
 
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
@@ -8,7 +8,7 @@ use slotmap::SlotMap;
 use crate::{
 	Error, PropId, SlabId,
 	context::Context,
-	prop::ItemId,
+	prop::{ItemId, PropValue},
 	updater::{Updater, start_track_panicing},
 };
 
@@ -96,7 +96,7 @@ impl TrackResult {
 /// - [Tracking](#tracking)
 /// - [Store Management](#store-management)
 pub struct Store<Ctx> {
-	pub(crate) props: SlotMap<ItemId, Box<dyn Any>>,
+	pub(crate) props: SlotMap<ItemId, PropValue>,
 
 	pub(crate) slabs: FxHashMap<SlabId, SlabData<Ctx>>,
 	/// The `SlabId` of the next slab to be added.
@@ -169,7 +169,7 @@ impl<Ctx: Context> Store<Ctx> {
 	/// });
 	/// ```
 	pub fn prop<T: 'static>(&mut self, value: T) -> PropId<T> {
-		let id = self.props.insert(Box::new(value));
+		let id = self.props.insert(PropValue::new(value));
 		PropId::new(id)
 	}
 
@@ -423,7 +423,7 @@ impl<Ctx: Context> Store<Ctx> {
 	/// assert_eq!(store.end_track().unwrap().read, []);
 	/// ```
 	pub fn try_peek<T: 'static>(&self, prop: PropId<T>) -> Option<&T> {
-		self.props.get(prop.0)?.downcast_ref()
+		self.props.get(prop.0).map(|p| p.get())
 	}
 
 	/// The safe version of [`write`](Store::write).
@@ -456,7 +456,7 @@ impl<Ctx: Context> Store<Ctx> {
 	/// assert_eq!(store.try_read_mut(nb), None);
 	/// ```
 	pub fn try_read_mut<T: 'static>(&mut self, prop: PropId<T>) -> Option<&mut T> {
-		let value = self.props.get_mut(prop.0)?.downcast_mut()?;
+		let value = self.props.get_mut(prop.0)?.get_mut();
 		Self::_track_write(&self.tracking, prop);
 		self.updater.push_update(prop.0);
 		Some(value)
