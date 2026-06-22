@@ -75,7 +75,7 @@
 //! It provides only the sharable parts between the renderers (the reactivity system and the chunk language) and also the philosophy, the unique rest is lift to the renderer.
 //!
 //! The available renderers include:
-//! - [`neoview-web`](https://docs.rs/neoview-web/latest/neoview-web/): A renderer targeting the web platform based on HTML and the DOM.
+//! - [`neoview-web`](https://docs.rs/neoview_web/latest/neoview_web/): A renderer targeting the web platform based on HTML and the DOM.
 
 mod context;
 mod prop;
