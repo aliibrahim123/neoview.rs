@@ -49,6 +49,7 @@ pub mod css_props;
 #[cfg(feature = "html-types")]
 pub mod html_types;
 mod list_render;
+mod utility;
 
 /// other documentation sections.
 #[cfg(doc)]
@@ -278,6 +279,7 @@ pub use {
 	context::{ContextId, CtxHandle, CtxOptions, DomContext, get_ctx, new_ctx, use_ctx},
 	list_render::{render_list, render_list_enumerated},
 	neoview,
+	utility::show_if,
 };
 
 /// `neoview-web` prelude.

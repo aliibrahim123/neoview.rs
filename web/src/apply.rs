@@ -14,15 +14,17 @@
 //!    )),
 //! )));
 //! ```
-use std::borrow::Cow;
+use std::{borrow::Cow, hash::Hash};
 
-use neoview::{PropId, StoreProv};
+use neoview::PropId;
 use web_sys::Event;
 
 use crate::{
 	bindings::{AttrValue, ClassValue, NodeValue, PropValue, StyleValue, TextValue},
 	build_codes::__buildcode::add_event,
+	list_render,
 	prelude::{ChunkBuild, DomContext},
+	utility::ShowIfValue,
 };
 
 /// A type that modifies the current element.
@@ -207,43 +209,9 @@ pub fn node<T>(value: impl NodeValue<T>) -> impl Applicable {
 	move |build: &mut ChunkBuild| value.apply(build)
 }
 
-/// The [`Applicable`] implementation for [`show_if`].
-#[doc(hidden)]
-pub trait ShowIfValue {
-	fn apply(self, build: &mut ChunkBuild);
-}
-impl ShowIfValue for bool {
-	fn apply(self, build: &mut ChunkBuild) {
-		if !self {
-			build.build_codes.style("display", "none");
-		}
-	}
-}
-impl ShowIfValue for PropId<bool> {
-	fn apply(self, build: &mut ChunkBuild) {
-		StyleValue::apply(
-			move |ctx: &mut DomContext| if ctx.get(self) { "" } else { "none" },
-			build,
-			"display".into(),
-		);
-	}
-}
-impl<F: FnMut(&mut DomContext) -> bool + 'static> ShowIfValue for F {
-	fn apply(mut self, build: &mut ChunkBuild) {
-		StyleValue::apply(
-			move |ctx: &mut DomContext| if self(ctx) { "" } else { "none" },
-			build,
-			"display".into(),
-		);
-	}
-}
-
 /// Returns an [`Applicable`] that shows and hides the current element based on `value`.
 ///
-/// The `value` can be:
-/// - [`bool`]: shows the element if `value` is `true`.
-/// - [`PropId<bool>`]: every time the property changes the element is hidden or shown based on its value.
-/// - [`ComputedExpr<bool>`](crate::chunk!#computedexprt): the element is hidden or shown based on the evaluated value.
+/// This is an alias for [`show_if`](crate::show_if) using the apply style.
 ///
 /// # Example
 /// ```
@@ -252,6 +220,49 @@ impl<F: FnMut(&mut DomContext) -> bool + 'static> ShowIfValue for F {
 /// ```
 pub fn show_if(value: impl ShowIfValue) -> impl Applicable {
 	move |build: &mut ChunkBuild| value.apply(build)
+}
+
+/// Returns an [`Applicable`] that renders a list dynamicly.
+///
+/// This is an alias for [`render_list`](crate::render_list) using the apply style.
+///
+/// # Example
+/// ```
+/// #[derive(Clone)]
+/// struct User { id: u32, name: String, age: u32 }
+/// let users = read_users(build);
+/// build.apply(render_list(users, |v| v.id, "div", |mut build, user| {
+///     chunk!(build, "user ", user.id, ": name = ", user.name, ", age = ", user.age);
+/// }));
+/// ```
+pub fn render_list<T: Clone, K: Eq + Hash + 'static>(
+	prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
+	tag: impl Into<Cow<'static, str>>, item_chunk: impl FnMut(&mut ChunkBuild, T) + 'static,
+) -> impl Applicable {
+	move |build: &mut ChunkBuild| list_render::render_list(build, prop, key_fn, tag, item_chunk)
+}
+
+/// Returns an [`Applicable`] that renders a list dynamicly.
+///
+/// This is an alias for [`render_list_enumerated`](crate::render_list_enumerated) using the apply style.
+///
+/// # Example
+/// ```
+/// #[derive(Clone)]
+/// struct User { id: u32, name: String, age: u32 }
+/// let users = read_users(build);
+/// build.apply(render_list_enumerated(users, |v| v.id, "div", |mut build, user, index| {
+///     chunk!(build, index, "- user ", user.id, ": name = ", user.name, ", age = ", user.age);
+/// }));
+/// ```
+pub fn render_list_enumerated<T: Clone, K: Eq + Hash + 'static>(
+	prop: PropId<impl AsRef<[T]>>, key_fn: impl Fn(&T) -> K + 'static,
+	tag: impl Into<Cow<'static, str>>,
+	item_chunk: impl FnMut(&mut ChunkBuild, T, PropId<usize>) + 'static,
+) -> impl Applicable {
+	move |build: &mut ChunkBuild| {
+		list_render::render_list_enumerated(build, prop, key_fn, tag, item_chunk)
+	}
 }
 
 impl Applicable for () {

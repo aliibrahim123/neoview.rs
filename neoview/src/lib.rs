@@ -333,6 +333,8 @@ pub use {
 pub enum Error {
 	/// the requested thing is removed.
 	Removed,
+	/// duplicated propids were given to [`Store::try_read_disjoint_mut`]
+	NotDisjoint,
 	/// requested to track while curently tracking.
 	Tracking,
 	/// requesting to end tracking while not tracking currently.

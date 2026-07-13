@@ -354,6 +354,38 @@ impl<Ctx: Context> Store<Ctx> {
 	pub fn update<T: 'static>(&mut self, prop: PropId<T>, fun: impl FnOnce(&mut T)) {
 		self.try_update(prop, fun).expect("updating removed property");
 	}
+
+	/// Returns mutable references to multiple reactive property's values at once.
+	///
+	/// It triggers an update and triggers a write signal while tracking for all properties.
+	///
+	/// It will panic if any given property is removed, or if the properties are not disjoint (duplicated [`PropId`]s where given). For a safe version, see [`try_read_disjoint_mut`](Store::try_read_disjoint_mut).
+	///
+	/// # Example
+	/// ```
+	/// let a = store.prop(1);
+	/// let b = store.prop(2);
+	/// let c = store.prop(3);
+	///
+	/// let (a_val, b_val, c_val) = store.read_disjoint_mut((a, b, c));
+	/// *a_val += 1;
+	/// *b_val += 1;
+	/// *c_val += 1;
+	///
+	/// assert_eq!(store.get(a), 2);
+	/// assert_eq!(store.get(b), 3);
+	/// assert_eq!(store.get(c), 4);
+	/// ```
+	pub fn read_disjoint_mut<'a, Props: PropsTuple>(
+		&'a mut self, props: Props,
+	) -> Props::ResultMut<'a> {
+		match self.try_read_disjoint_mut(props) {
+			Ok(props) => props,
+			Err(Error::Removed) => panic!("mutating removed property"),
+			Err(Error::NotDisjoint) => panic!("mutating non-disjoint properties"),
+			_ => unreachable!(),
+		}
+	}
 }
 
 /// <h2 id=safe-property-access>Safe Property Access</h2>
@@ -457,7 +489,7 @@ impl<Ctx: Context> Store<Ctx> {
 	/// ```
 	pub fn try_read_mut<T: 'static>(&mut self, prop: PropId<T>) -> Option<&mut T> {
 		let value = self.props.get_mut(prop.0)?.get_mut();
-		Self::_track_write(&self.tracking, prop);
+		Self::_track_write(&self.tracking, prop.0);
 		self.updater.push_update(prop.0);
 		Some(value)
 	}
@@ -480,6 +512,31 @@ impl<Ctx: Context> Store<Ctx> {
 		let prop = self.try_read_mut(prop).ok_or(Error::Removed)?;
 		fun(prop);
 		Ok(())
+	}
+
+	/// The safe version of [`read_disjoint_mut`](Store::read_disjoint_mut).
+	///
+	/// It returns multiple mutable references to the given properties.
+	///
+	/// it returns [`Error::Removed`] if any property is removed, and returns [`Error::NotDisjoint`] if the properties are not disjoint without triggering anything.
+	///
+	/// # Example
+	/// ```
+	/// let a = store.prop(1);
+	/// let b = store.prop_in(Some(slab), 2);
+	/// let c = store.prop(3);
+	///
+	/// assert_eq!(store.try_read_disjoint_mut((a, b, c)), Ok((1, 2, 3)));
+	///
+	/// Store::remove(ctx, slab);
+	/// assert_eq!(store.try_read_disjoint_mut((a, b, c)), Err(Error::Removed));
+	///
+	/// assert_eq!(store.try_read_disjoint_mut((a, c, a)), Err(Error::NotDisjoint));
+	/// ```
+	pub fn try_read_disjoint_mut<'a, Props: PropsTuple>(
+		&'a mut self, props: Props,
+	) -> Result<Props::ResultMut<'a>, Error> {
+		Props::read_disjoint_mut(self, props)
 	}
 }
 
@@ -939,9 +996,9 @@ impl<Ctx: Context> Store<Ctx> {
 
 	/// Records a property as written while tracking.
 	// done like this because `get_mut` requires a partial borrow.
-	fn _track_write<T: 'static>(tracking: &RefCell<Option<TrackResult>>, id: PropId<T>) {
+	fn _track_write(tracking: &RefCell<Option<TrackResult>>, id: ItemId) {
 		if let Some(tracking) = tracking.borrow_mut().deref_mut() {
-			tracking.written.push(id.erase_type());
+			tracking.written.push(PropId::new(id));
 		}
 	}
 
@@ -957,7 +1014,7 @@ impl<Ctx: Context> Store<Ctx> {
 	/// assert_eq!(store.end_track().unwrap().written, [a.erase_type()]);
 	/// ```
 	pub fn track_write<T: 'static>(&self, id: PropId<T>) {
-		Self::_track_write(&self.tracking, id);
+		Self::_track_write(&self.tracking, id.0);
 	}
 }
 
@@ -1023,3 +1080,50 @@ impl<Ctx> Drop for Store<Ctx> {
 		}
 	}
 }
+
+pub trait PropsTuple {
+	type ResultMut<'a>;
+	fn read_disjoint_mut<'a, Ctx: Context>(
+		store: &'a mut Store<Ctx>, props: Self,
+	) -> Result<Self::ResultMut<'a>, Error>;
+}
+macro_rules! impl_props_tuple {
+	[$($prop:ident),+] => {
+		#[allow(non_snake_case)]
+		impl<$($prop: 'static),+> PropsTuple for ($(PropId<$prop>),+,) {
+			type ResultMut<'a> = ($(&'a mut $prop),+,);
+			fn read_disjoint_mut<Ctx: Context>(
+				store: &mut Store<Ctx>, props: Self,
+			) -> Result<($(&mut $prop),+,), Error> {
+				let ($($prop),+,) = props;
+				let props_ids = [$($prop.0),+];
+				for prop in props_ids {
+					if !store.props.contains_key(prop) {
+						return Err(Error::Removed);
+					}
+				}
+				let Some(props) = store.props.get_disjoint_mut(props_ids) else {
+					return Err(Error::NotDisjoint);
+				};
+				for prop in props_ids {
+					Store::<Ctx>::_track_write(&store.tracking, prop);
+					store.updater.push_update(prop);
+				}
+				let [$($prop),+] = props;
+				Ok(($($prop.get_mut()),+,))
+			}
+		}
+	};
+}
+impl_props_tuple![A];
+impl_props_tuple![A, B];
+impl_props_tuple![A, B, C];
+impl_props_tuple![A, B, C, D];
+impl_props_tuple![A, B, C, D, E];
+impl_props_tuple![A, B, C, D, E, F];
+impl_props_tuple![A, B, C, D, E, F, G];
+impl_props_tuple![A, B, C, D, E, F, G, H];
+impl_props_tuple![A, B, C, D, E, F, G, H, I];
+impl_props_tuple![A, B, C, D, E, F, G, H, I, J];
+impl_props_tuple![A, B, C, D, E, F, G, H, I, J, K];
+impl_props_tuple![A, B, C, D, E, F, G, H, I, J, K, L];
