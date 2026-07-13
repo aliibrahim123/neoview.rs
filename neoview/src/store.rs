@@ -224,7 +224,7 @@ impl<Ctx: Context> Store<Ctx> {
 ///
 /// They are of two kinds:
 /// - **Reading methods**: [`read`](Store::read), [`get`](Store::get), and [`peek`](Store::peek).
-/// - **Mutating methods**: [`write`](Store::write), [`read_mut`](Store::read_mut), and [`update`](Store::update).
+/// - **Mutating methods**: [`write`](Store::write), [`read_mut`](Store::read_mut), [`update`](Store::update), and [`read_disjoint_mut`](Store::read_disjoint_mut).
 ///
 /// ## Example
 /// ```
