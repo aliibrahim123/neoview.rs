@@ -319,6 +319,7 @@ mod updater;
 ///     __buildcode::end_chunk!(build, el);
 /// }
 /// ```
+#[doc(inline)]
 pub use neoview_macro::chunk;
 
 pub use {

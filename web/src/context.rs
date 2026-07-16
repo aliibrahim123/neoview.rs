@@ -51,9 +51,9 @@ impl Default for CtxOptions {
 ///
 /// This type is the single owner of the UI. Every interaction requires a mutable reference to it, and the UI is dropped when the `DomContext` is dropped.
 ///
-/// It is created by [`new`](Self::new), wraps a root [`Element`], and exposes its [`Store`] through [`StoreProv`].
+/// It is created by [`new_ctx`], wraps a root [`Element`], and exposes its [`Store`] through [`StoreProv`].
 /// ```
-/// let handle = DomContext::new(root_el, CtxOptions::default());
+/// let handle = new_ctx(root_el, CtxOptions::default());
 /// let ctx = handle.borrow_mut();
 /// ```
 ///
@@ -88,7 +88,7 @@ pub struct DomContext {
 /// # Example
 /// ```
 /// let el = windows().unwrap().document().unwrap().create_element("div").unwrap();
-/// let handle = DomContext::new(el, CtxOptions::default());
+/// let handle = new_ctx(el, CtxOptions::default());
 /// let ctx = handle.borrow_mut();
 /// ```
 pub fn new_ctx(root_el: Element, opts: CtxOptions) -> CtxHandle {

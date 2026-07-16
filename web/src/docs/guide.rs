@@ -24,7 +24,7 @@
 //!
 //! Here is a minimal example `lib.rs`:
 //! ```
-//! use neoview_web::prelude::*;
+//! use neoview_web::{prelude::*, new_ctx};
 //! use wasm_bindgen::prelude::wasm_bindgen;
 //! use web_sys::window;
 //!
@@ -34,7 +34,7 @@
 //!     // get main element
 //!     let el = window().unwrap().document().unwrap().query_selector("#main").unwrap().unwrap();
 //!     // create context
-//!     let handle = DomContext::new(el, Default::default());
+//!     let handle = new_ctx(el, Default::default());
 //!     {
 //!         let mut ctx = handle.borrow_mut();
 //!         // create root chunk
@@ -65,9 +65,9 @@
 //! }
 //! ```
 //!
-//! Generally, a single [`DomContext`] will be created in the main function. It is created with [`DomContext::new`], which requires the root element and a [`CtxOptions`] (just passing `Default::default()` is fine).
+//! Generally, a single [`DomContext`] will be created in the main function. It is created with [`new_ctx`], which requires the root element and a [`CtxOptions`] (just passing `Default::default()` is fine).
 //!
-//! [`DomContext::new`] returns a [`CtxHandle`], which is a wrapper around [`DomContext`] that needs to be kept alive for the duration of the UI. Just call [`std::mem::forget`] on it and forget about it.
+//! [`new_ctx`] returns a [`CtxHandle`], which is a wrapper around [`DomContext`] that needs to be kept alive for the duration of the UI. Just call [`std::mem::forget`] on it and forget about it.
 //!
 //! # Reactivity
 //! Reactivity is essential to every UI framework, and `neoview-web` is no different.
