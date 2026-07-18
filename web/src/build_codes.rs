@@ -397,12 +397,12 @@ pub mod __buildcode {
 
 	#[macro_export]
 	#[doc(hidden)]
-	macro_rules! start_do_block {
+	macro_rules! start_op {
 		($($t:tt)*) => {};
 	}
 	#[macro_export]
 	#[doc(hidden)]
-	macro_rules! end_do_block {
+	macro_rules! end_op {
 		($($t:tt)*) => {};
 	}
 
@@ -444,7 +444,7 @@ pub mod __buildcode {
 	use web_sys::Event;
 	#[doc(hidden)]
 	pub use {
-		attr, attr_common, colorify, content, end_chunk, end_do_block, end_el, refine_value,
-		start_chunk, start_do_block, start_el, start_el_common,
+		attr, attr_common, colorify, content, end_chunk, end_el, end_op, refine_value, start_chunk,
+		start_el, start_el_common, start_op,
 	};
 }

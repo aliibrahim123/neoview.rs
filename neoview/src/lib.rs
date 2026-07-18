@@ -185,7 +185,7 @@ mod updater;
 /// chunk!(build, div {
 ///     "after this",
 ///     do {
-///            let count = build.prop(0);
+///         let count = build.prop(0);
 ///         chunk!(build, button(
 ///             on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
 ///         ) { "count: ", count });

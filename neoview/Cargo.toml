@@ -12,7 +12,7 @@ documentation = "https://docs.rs/neoview/"
 doctest = false
 
 [dependencies]
-rustc-hash = "2.1.2"
+rustc-hash = "2.1.3"
 slotmap = "1.1.1"
-smallvec = "1.15.1"
+smallvec = "1.15.2"
 neoview-macro = { path = "../macro", version = "0.0.2" }

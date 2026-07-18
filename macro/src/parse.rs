@@ -27,14 +27,26 @@ impl ToTokens for Path {
 	}
 }
 
+pub type Children = Vec<Child>;
+pub type Tokens = Vec<TokenTree>;
+
 /// item that can be exist inside the chunk ui tree
 #[derive(Debug)]
 pub enum Child {
 	Element(Element),
-	/// grammer:  `"do" "{" _* "}" | "for" _+ "{" _* "}" | "match" _+ "{" _* "}" | "if" _+ "{" _* "}" ("else" _+ "{" _* "}")*`
-	DoBlock(Vec<TokenTree>),
 	/// grammer: `_+`
-	Content(Vec<TokenTree>),
+	Content(Tokens),
+	/// grammer:  `"do" "{" _* "}" | "for" _+ "{" _* "}" | "match" _+ "{" _* "}" | "if" _+ "{" _* "}" ("else" _+ "{" _* "}")*`
+	DoBlock(Tokens),
+	If(Vec<IfArm>),
+	For {
+		arg: Tokens,
+		children: Children,
+	},
+	Match {
+		arg: Tokens,
+		arms: Vec<MatchArm>,
+	},
 }
 
 /// an [`Element`] tag.
@@ -53,18 +65,30 @@ pub enum Tag {
 pub struct Element {
 	pub tag: Tag,
 	/// grammer: `(` list<ident | _+ ":" _+, ",">? ","? `)`
-	pub attrs: Vec<(Vec<TokenTree>, Vec<TokenTree>)>,
+	pub attrs: Vec<(Tokens, Tokens)>,
 	/// grammer: `{" children? "}`
-	pub children: Vec<Child>,
+	pub children: Children,
+}
+
+#[derive(Debug)]
+pub struct IfArm {
+	pub cond: Option<Tokens>,
+	pub children: Children,
+}
+
+#[derive(Debug)]
+pub struct MatchArm {
+	pub pat: Tokens,
+	pub children: Children,
 }
 
 /// `chunk` input
 #[derive(Debug)]
 pub struct ChunkInput {
-	pub build: Vec<TokenTree>,
+	pub build: Tokens,
 	/// the build variable identifier.
 	pub build_ident: Ident,
-	pub children: Vec<Child>,
+	pub children: Children,
 }
 
 pub fn try_parse_path(cur: &mut Cursor) -> Option<Path> {
@@ -82,57 +106,86 @@ pub fn try_parse_path(cur: &mut Cursor) -> Option<Path> {
 	Some(Path { leading_colon, segments })
 }
 
+fn eat_until_comma(cur: &mut Cursor) -> Tokens {
+	cur.eat_until(|token| match_punct!(token, ','))
+}
+fn eat_until_brace(cur: &mut Cursor) -> Tokens {
+	cur.eat_until(|token| matches!(token, Token::Group(group) if group.delimiter() == Brace))
+}
+
+fn parse_child(cur: &mut Cursor) -> Result<Child, Error> {
+	// do block
+	if cur.try_kw("do") {
+		let block = cur.group(Brace)?;
+		Ok(Child::DoBlock(block.stream().into_iter().collect()))
+	}
+	// if shorthand
+	else if cur.test_kw("if") {
+		let mut arms = Vec::new();
+		loop {
+			let cond = if cur.try_kw("if") { Some(eat_until_brace(cur)) } else { None };
+			let children = parse_children(&mut cur.enter_group(Brace)?)?;
+			arms.push(IfArm { cond, children });
+
+			if !cur.try_kw("else") {
+				break;
+			}
+		}
+		Ok(Child::If(arms))
+	} else if cur.try_kw("for") {
+		let arg = eat_until_brace(cur);
+		let children = parse_children(&mut cur.enter_group(Brace)?)?;
+		Ok(Child::For { arg, children })
+	}
+	// match shorthand
+	else if cur.try_kw("match") {
+		let arg = eat_until_brace(cur);
+		let mut arms = Vec::new();
+		let mut arms_cur = cur.enter_group(Brace)?;
+		while !arms_cur.is_end() {
+			let mut pat = Vec::new();
+			while arms_cur.try_multi_punct(['=', '>']).is_none() {
+				if arms_cur.is_end() {
+					return err!("expected `=>`", arms_cur.peek().span());
+				}
+				pat.push(arms_cur.peek().clone().into());
+				arms_cur.skip();
+			}
+			let children = if let Some(mut cur) = arms_cur.try_enter_group(Brace) {
+				parse_children(&mut cur)?
+			} else {
+				vec![parse_child(&mut arms_cur)?]
+			};
+			arms.push(MatchArm { pat, children });
+			arms_cur.try_punct(',');
+		}
+		Ok(Child::Match { arg, arms })
+	}
+	// element
+	else if let Some(el) = try_parse_el(cur)? {
+		Ok(Child::Element(el))
+	}
+	// content
+	else {
+		let content = eat_until_comma(cur);
+		if content.is_empty() {
+			let msg = "expected an element, expression, do block or a control flow";
+			return err!(msg, cur.peek().span());
+		}
+		Ok(Child::Content(content))
+	}
+}
+
 /// grammer:
 /// ```text
 /// (child_opt_comma | child_req_comma) (","? child_opt_comma | "," child_req_comma)* ","?;
 /// let child_opt_comma = element | do_block;
 /// let child_req_comma = content;
 /// ```
-fn parse_children(cur: &mut Cursor) -> Result<Vec<Child>, Error> {
+fn parse_children(cur: &mut Cursor) -> Result<Children, Error> {
 	let mut children = Vec::new();
 	while !cur.is_end() {
-		// do block
-		if cur.try_kw("do") {
-			let block = cur.group(Brace)?;
-			children.push(Child::DoBlock(block.stream().into_iter().collect()));
-		}
-		// if shorthand
-		else if cur.test_kw("if") {
-			let mut block = Vec::new();
-			loop {
-				block.extend(cur.eat_until(
-					|token| matches!(token, Token::Group(group) if group.delimiter() == Brace),
-				));
-				block.push(cur.group(Brace)?.into());
-				if !cur.test_kw("else") {
-					break;
-				}
-			}
-			children.push(Child::DoBlock(block))
-		}
-		// for and match shorthand
-		else if cur.test_kw("for") | cur.test_kw("match") {
-			let mut block = cur.eat_until(
-				|token| matches!(token, Token::Group(group) if group.delimiter() == Brace),
-			);
-			block.push(cur.group(Brace)?.into());
-			children.push(Child::DoBlock(block))
-		}
-		// element
-		else if let Some(el) = try_parse_el(cur)? {
-			children.push(Child::Element(el));
-			if !match_punct!(cur.peek(), ',') {
-				continue;
-			}
-		}
-		// content
-		else {
-			let content = cur.eat_until(|token| match_punct!(token, ','));
-			if content.is_empty() {
-				return err!("expected an element, expression or a do block", cur.peek().span());
-			}
-			children.push(Child::Content(content));
-		}
+		children.push(parse_child(cur)?);
 		cur.try_punct(',');
 	}
 	Ok(children)
@@ -169,7 +222,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 			}
 			cur.punct(':')?;
 
-			let value = cur.eat_until(|token| match_punct!(token, ','));
+			let value = eat_until_comma(&mut cur);
 			if value.is_empty() {
 				return err!("expected an attribute value", cur.peek().span());
 			}
@@ -199,7 +252,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
 	let mut cur = Cursor::new(input, Span::call_site());
 
-	let build = cur.eat_until(|token| match_punct!(token, ','));
+	let build = eat_until_comma(&mut cur);
 	if build.is_empty() {
 		return err!("expected an expression", cur.peek().span());
 	}

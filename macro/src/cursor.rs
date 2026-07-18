@@ -4,7 +4,7 @@ use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenS
 use quote::{ToTokens, quote_spanned};
 
 /// [`TokenTree`] plus an [`End`](Self::End).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
 	Group(Group),
 	Ident(Ident),
@@ -268,15 +268,7 @@ impl Cursor {
 	pub fn eat_until(&mut self, pred: impl Fn(&Token) -> bool) -> Vec<TokenTree> {
 		let mut tokens = Vec::new();
 		while !(self.is_end() || pred(self.peek())) {
-			tokens.push(match self.peek() {
-				Token::Group(group) => TokenTree::Group(group.clone()),
-				Token::Ident(ident) => TokenTree::Ident(ident.clone()),
-				Token::Punct(char, span, spacing) => {
-					TokenTree::Punct(pack_punct(*char, *span, *spacing))
-				}
-				Token::Literal(lit) => TokenTree::Literal(lit.clone()),
-				_ => unreachable!(),
-			});
+			tokens.push(self.peek().clone().into());
 			self.ind += 1;
 		}
 		tokens
@@ -306,6 +298,9 @@ impl ToTokens for Error {
 macro_rules! err {
 	($msg:literal, $span:expr) => {
 		Err(crate::cursor::Error::new(format!($msg), $span))
+	};
+	($msg:ident, $span:expr) => {
+		Err(crate::cursor::Error::new($msg.to_string(), $span))
 	};
 }
 pub(crate) use err;
