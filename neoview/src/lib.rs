@@ -50,7 +50,7 @@
 //! All Rust control flow and even all imperative patterns can be used inside chunks. There is no custom syntax for components, they are simply functions that borrow the context.
 //!
 //! ```rust
-//! fn counter(build: &mut ChunkBuild, name: PropId<String>) {
+//! fn counter(build: &mut ChunkBuild, name: &str) {
 //!     let count = build.prop(0);
 //!     chunk!(build, button(
 //!         on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
@@ -60,8 +60,8 @@
 //!     // ...
 //!     chunk!(build, div {
 //!         for name in 'a'..'z' {
-//!             let name = build.prop(name.to_string());
-//!             counter(build, name);
+//!             do { counter(build, name) }
+//!             br()
 //!         }
 //!     })
 //! }
@@ -125,12 +125,12 @@ mod updater;
 /// ### Children
 /// ```text
 /// let children = (child_opt_comma | child_req_comma) (","? child_opt_comma | "," child_req_comma)* ","?;
-/// let child_opt_comma = element | do_block;
+/// let child_opt_comma = element | do_block | if_flow | for_flow | match_flow;
 /// let child_req_comma = content;
 /// ```
 /// The chunk syntax represents a tree of element children, where children are items that can be nested inside an element.
 ///
-/// A comma is used to separate children. Some items have it as optional ([elements](#element) and [do blocks](#do-block)), while others require it ([contents](#content)). A trailing comma is allowed.
+/// A comma is used to separate children. Some items have it as optional ([elements](#element), [do blocks](#do-block)) and [control flows](#control-flows), while others require it ([contents](#content)). A trailing comma is allowed.
 ///
 /// ```
 /// chunk!(build,
@@ -168,18 +168,11 @@ mod updater;
 ///
 /// ### Do Block
 /// ```text
-/// let do_block =
-///     "do" "{" _* "}" | "for" _+ "{" _* "}" | "match" _+ "{" _* "}" |
-///     "if" _+ "{" _* "}" ("else" _+ "{" _* "}")*
-/// ;
+/// let do_block = "do" "{" _* "}";
 /// ```
-/// Do blocks are expression blocks that are evaluated when execution reaches where the block is defined inside the tree.
+/// Do blocks are expression blocks defined after a `do` keyword that are evaluated when execution reaches where the block is defined inside the tree.
 ///
 /// They are a unique feature to `neocomp` that allow inlining logic within the UI and separating the UI into multiple nested chunks.
-///
-/// Do blocks are defined using the `do` keyword followed by an expression block. There are also direct shorthands for `if`, `for`, and `match` expressions.
-///
-/// Note: Do blocks and their shorthands are static and not dynamic. For dynamic versions, see your renderer's documentation.
 ///
 /// ```
 /// chunk!(build, div {
@@ -189,21 +182,46 @@ mod updater;
 ///         chunk!(build, button(
 ///             on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))
 ///         ) { "count: ", count });
+///         chunk!(build, do {
+///             chunk!("nested")
+///         })
 ///     }
 ///     "before this",
+/// });
+/// ```
 ///
-///     for name in 'a'..'z' {
-///            chunk!(build, div { name });
-///     }
-///     if a > b {
-///         "greater"
+/// ### Control Flows
+/// ```text
+/// let if_flow = "if" expr "{" children "}" ("else" "if" expr "{" children "}")* ("else" "{" children "}")?;
+/// let for_flow = "for" pat in expr "{" children "}";
+/// let match_flow = "match" expr "{" (pat "=>" (child | "{" children "}") ","?)* "}";
+/// ```
+///
+/// Control flows (`if`, `for`, and `match`) are operators that render their children conditionally or iteratively.
+///
+/// They are equivalent to their rust counterparts, except that their block is a children block.
+///
+/// They are static not dynamic or reactive, for the reactive versions see your renderer's documentation.
+///
+/// ```
+/// chunk!(build, div {
+///     if nb > 10 {
+///         "greater than"
+///     } else if nb < 10 {
+///         "less than"
 ///     } else {
-///         "less"
+///         "equal"
 ///     }
+///
+///     for i in 0..10 {
+///         "item: ", i, br()
+///     }
+///
 ///     match nb {
-///         1 => "one",
-///         2 => "two",
-///         _ => "other",
+///         0 => "zero",
+///         1 => span { "one" },
+///         2 => { "two" }
+///         _ => "other"
 ///     }
 /// });
 /// ```
@@ -212,7 +230,7 @@ mod updater;
 /// ```text
 /// let content = _+;
 /// ```
-/// Content is any token list that is not an element or a do block.
+/// Content is any token list that is not an element, a do block or a control flow.
 ///
 /// It can be a string literal, an expression, or any other token list defined by the renderer.
 ///
@@ -275,24 +293,27 @@ mod updater;
 /// ```
 /// `content` is called for every piece of content with the element and the content tokens.
 ///
-/// ### Do Block Buildcodes
+/// ### Operators Buildcodes
 /// ```
-/// macro_rules! start_do_block {
-///     ($build:expr, $el:expr) => { };
+/// macro_rules! start_op {
+///     ($build:expr, $op:ident, $el:expr) => { };
 /// }
-/// macro_rules! end_do_block {
-///     ($build:expr, $el:expr) => { };
+/// macro_rules! start_op {
+///     ($build:expr, $op:ident, $el:expr) => { };
 /// }
 /// ```
-/// `start_do_block` and `end_do_block` are called for every do block with the element.
+/// `start_op` and `end_op` are called for every operator (do blocks and control flow) with the element.
 ///
-/// A do block is transformed into an expression block containing a call to `start_do_block`, followed by the block contents, and finally a call to `end_do_block`.
+/// An do block is transformed into an expression block containing a call to `start_op(do)`, followed by the block contents, and finally a call to `end_op(do)`.
+///
+/// A control flow is transformed into its rust equivalent, with the body containing a call to `start_op(op)`, followed by the children buildcodes, and finally a call to `end_op(op)`, where `op` is the name of the control flow.
 ///
 /// ### Example
 /// ```
 /// chunk!(build, div {
 ///     span(id: "hello") { "world" }
 ///     do { println!("hello") }
+///     for i in 0..10 { i }
 /// });
 ///
 ///    // will be transformed into something like:
@@ -309,9 +330,14 @@ mod updater;
 ///            };
 ///            __buildcode::end_el!(build, el, child, span);
 ///         {
-///             __buildcode::start_do_block!(build, el);
+///             __buildcode::start_op!(build, do, el);
 ///             println!("hello");
-///             __buildcode::end_do_block!(build, el);
+///             __buildcode::end_op!(build, do el);
+///         }
+///         for i in 0..10 {
+///             __buildcode::start_op!(build, for, el);
+///             __buildcode::content!(build, el, i);
+///             __buildcode::end_op!(build, for, el);
 ///         }
 ///         el
 ///        };

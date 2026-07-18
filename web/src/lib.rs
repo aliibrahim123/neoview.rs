@@ -83,7 +83,7 @@ pub mod __private {
 	///         ) { "count: ", count });
 	///     }
 	///     for i in 0..10 {
-	///         chunk!(build, div(style.color: if i % 2 == 0 { "red" } else { "blue" }) { "item ", i });
+	///         div(style.color: if i % 2 == 0 { "red" } else { "blue" }) { "item ", i }
 	///     }
 	/// });
 	/// ```

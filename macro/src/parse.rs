@@ -27,7 +27,9 @@ impl ToTokens for Path {
 	}
 }
 
+/// a list of [`Child`]
 pub type Children = Vec<Child>;
+/// a list of [`TokenTree`]
 pub type Tokens = Vec<TokenTree>;
 
 /// item that can be exist inside the chunk ui tree
@@ -36,13 +38,16 @@ pub enum Child {
 	Element(Element),
 	/// grammer: `_+`
 	Content(Tokens),
-	/// grammer:  `"do" "{" _* "}" | "for" _+ "{" _* "}" | "match" _+ "{" _* "}" | "if" _+ "{" _* "}" ("else" _+ "{" _* "}")*`
+	/// grammer:  `"do" "{" _* "}"
 	DoBlock(Tokens),
+	/// grammer: `"if" _+ "{" children "}" ("else" _* "{" children "}")*`
 	If(Vec<IfArm>),
+	/// grammer: `"for" _+ in _* "{" children "}"
 	For {
 		arg: Tokens,
 		children: Children,
 	},
+	/// grammer: `"match" _+ "{" (_+ "=>" (child | "{" children "}") ","?)* "}`
 	Match {
 		arg: Tokens,
 		arms: Vec<MatchArm>,
@@ -70,6 +75,7 @@ pub struct Element {
 	pub children: Children,
 }
 
+/// an if chain arm
 #[derive(Debug)]
 pub struct IfArm {
 	pub cond: Option<Tokens>,
@@ -113,18 +119,22 @@ fn eat_until_brace(cur: &mut Cursor) -> Tokens {
 	cur.eat_until(|token| matches!(token, Token::Group(group) if group.delimiter() == Brace))
 }
 
+fn expected_child<T>(cur: &Cursor) -> Result<T, Error> {
+	err!("expected an element, expression, do block or a control flow", cur.peek().span())
+}
+
 fn parse_child(cur: &mut Cursor) -> Result<Child, Error> {
 	// do block
 	if cur.try_kw("do") {
 		let block = cur.group(Brace)?;
 		Ok(Child::DoBlock(block.stream().into_iter().collect()))
 	}
-	// if shorthand
+	// if flow
 	else if cur.test_kw("if") {
 		let mut arms = Vec::new();
 		loop {
 			let cond = if cur.try_kw("if") { Some(eat_until_brace(cur)) } else { None };
-			let children = parse_children(&mut cur.enter_group(Brace)?)?;
+			let children = parse_children(&mut cur.enter_group(Brace)?, false)?;
 			arms.push(IfArm { cond, children });
 
 			if !cur.try_kw("else") {
@@ -132,12 +142,15 @@ fn parse_child(cur: &mut Cursor) -> Result<Child, Error> {
 			}
 		}
 		Ok(Child::If(arms))
-	} else if cur.try_kw("for") {
-		let arg = eat_until_brace(cur);
-		let children = parse_children(&mut cur.enter_group(Brace)?)?;
+	}
+	// for flow
+	else if cur.try_kw("for") {
+		let mut arg = cur.eat_until(|token| matches!(token, Token::Ident(ident) if ident == "in"));
+		arg.extend(eat_until_brace(cur));
+		let children = parse_children(&mut cur.enter_group(Brace)?, false)?;
 		Ok(Child::For { arg, children })
 	}
-	// match shorthand
+	// match flow
 	else if cur.try_kw("match") {
 		let arg = eat_until_brace(cur);
 		let mut arms = Vec::new();
@@ -151,11 +164,13 @@ fn parse_child(cur: &mut Cursor) -> Result<Child, Error> {
 				pat.push(arms_cur.peek().clone().into());
 				arms_cur.skip();
 			}
+
 			let children = if let Some(mut cur) = arms_cur.try_enter_group(Brace) {
-				parse_children(&mut cur)?
+				parse_children(&mut cur, false)?
 			} else {
 				vec![parse_child(&mut arms_cur)?]
 			};
+
 			arms.push(MatchArm { pat, children });
 			arms_cur.try_punct(',');
 		}
@@ -169,8 +184,7 @@ fn parse_child(cur: &mut Cursor) -> Result<Child, Error> {
 	else {
 		let content = eat_until_comma(cur);
 		if content.is_empty() {
-			let msg = "expected an element, expression, do block or a control flow";
-			return err!(msg, cur.peek().span());
+			return expected_child(cur);
 		}
 		Ok(Child::Content(content))
 	}
@@ -179,14 +193,17 @@ fn parse_child(cur: &mut Cursor) -> Result<Child, Error> {
 /// grammer:
 /// ```text
 /// (child_opt_comma | child_req_comma) (","? child_opt_comma | "," child_req_comma)* ","?;
-/// let child_opt_comma = element | do_block;
+/// let child_opt_comma = element | do_block | if_flow | for_flow | match_flow;
 /// let child_req_comma = content;
 /// ```
-fn parse_children(cur: &mut Cursor) -> Result<Children, Error> {
+fn parse_children(cur: &mut Cursor, is_optional: bool) -> Result<Children, Error> {
 	let mut children = Vec::new();
 	while !cur.is_end() {
 		children.push(parse_child(cur)?);
 		cur.try_punct(',');
+	}
+	if !is_optional && children.is_empty() {
+		return expected_child(cur);
 	}
 	Ok(children)
 }
@@ -238,7 +255,7 @@ fn try_parse_el(cur: &mut Cursor) -> Result<Option<Element>, Error> {
 	let mut children = Vec::new();
 	if let Some(mut cur) = cur.try_enter_group(Delimiter::Brace) {
 		has_body = true;
-		children = parse_children(&mut cur)?;
+		children = parse_children(&mut cur, true)?;
 	}
 
 	if has_body {
@@ -262,10 +279,7 @@ pub fn parse_chunk_input(input: TokenStream) -> Result<ChunkInput, Error> {
 	};
 	cur.punct(',')?;
 
-	let children = parse_children(&mut cur)?;
-	if children.is_empty() {
-		return err!("expected an element, expression or a do block", cur.peek().span());
-	}
+	let children = parse_children(&mut cur, false)?;
 
 	Ok(ChunkInput { build, build_ident, children })
 }
