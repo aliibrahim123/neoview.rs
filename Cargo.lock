@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "neoview"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "neoview-macro",
  "rustc-hash",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "neoview-macro"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -69,7 +69,7 @@ dependencies = [
 
 [[package]]
 name = "neoview-web"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "neoview",
  "neoview-macro",
