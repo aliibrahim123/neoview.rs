@@ -19,14 +19,38 @@ new_key_type!(
 
 /// Chunk data.
 #[derive(Default)]
-pub struct Chunk {
+pub struct ChunkData {
 	pub elements: Vec<Element>,
 	/// Event listeners.
 	pub events: Vec<Option<EventFn>>,
 }
-impl Debug for Chunk {
+impl Debug for ChunkData {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Chunk").field("elements", &self.elements).finish()
+	}
+}
+
+pub struct BuildState {
+	/// The chunk ID.
+	pub id: ChunkId,
+	/// The slab ID.
+	pub slab: Option<SlabId>,
+	/// The base element.
+	pub base_el: Element,
+	pub build_codes: BuildCodes,
+	/// A queue of `ref_el` callbacks: (el_id, fun).
+	ref_queue: Vec<(u64, RefFn)>,
+}
+
+impl Debug for BuildState {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("BuildState")
+			.field("id", &self.id)
+			.field("slab", &self.slab)
+			.field("base_el", &self.base_el)
+			.field("build_codes", &self.build_codes)
+			.field("ref_queue", &self.ref_queue.iter().map(|v| v.0).collect::<Vec<_>>())
+			.finish()
 	}
 }
 
@@ -53,19 +77,12 @@ impl Debug for Chunk {
 /// build.build();
 /// chunk!(root_build, el);
 /// ```
+#[derive(Debug)]
 pub struct ChunkBuild<'ctx> {
 	/// The context.
 	pub(crate) ctx: &'ctx mut DomContext,
-	/// The chunk ID.
-	pub(crate) id: ChunkId,
-	/// The slab ID.
-	pub(crate) slab: Option<SlabId>,
-	/// The base element.
-	pub(crate) base_el: Element,
 	#[doc(hidden)]
-	pub build_codes: BuildCodes,
-	/// A queue of `ref_el` callbacks: (el_id, fun).
-	ref_queue: Vec<(u64, RefFn)>,
+	pub state: BuildState,
 }
 type RefFn = Box<dyn FnOnce(&mut DomContext, &Element)>;
 impl<'ctx> ChunkBuild<'ctx> {
@@ -73,11 +90,13 @@ impl<'ctx> ChunkBuild<'ctx> {
 	pub(crate) fn new(
 		ctx: &'ctx mut DomContext, id: ChunkId, slab: Option<SlabId>, base_el: Element,
 	) -> Self {
-		Self { ctx, slab, base_el, id, build_codes: BuildCodes::new(), ref_queue: Vec::new() }
+		let state =
+			BuildState { slab, base_el, id, build_codes: BuildCodes::new(), ref_queue: Vec::new() };
+		Self { ctx, state }
 	}
 	/// Returns the base [`Element`] of the chunk.
 	pub fn base_el(&self) -> Element {
-		self.base_el.clone()
+		self.state.base_el.clone()
 	}
 
 	/// Applies the [`Applicable`] to the current element.
@@ -101,7 +120,11 @@ impl<'ctx> ChunkBuild<'ctx> {
 	/// build.ref_el(|ctx, el| println!("{}", el.text_content().unwrap()));
 	/// ```
 	pub fn ref_el(&mut self, fun: impl FnOnce(&mut DomContext, &Element) + 'static) {
-		self.ref_queue.push((self.build_codes.request_id(), Box::new(fun)));
+		self.state.ref_queue.push((self.state.build_codes.request_id(), Box::new(fun)));
+	}
+
+	pub fn hibernate(self) -> (&'ctx mut DomContext, DormantChunk) {
+		(self.ctx, DormantChunk(self.state))
 	}
 
 	/// Builds the chunk.
@@ -117,12 +140,13 @@ impl<'ctx> ChunkBuild<'ctx> {
 	/// chunk!(root_build, el);
 	/// ```
 	pub fn build(self) -> Element {
-		let elements = self.build_codes.construct(&self.base_el);
-		for (id, fun) in self.ref_queue {
+		let BuildState { id, base_el, build_codes, ref_queue, .. } = self.state;
+		let elements = build_codes.construct(&base_el);
+		for (id, fun) in ref_queue {
 			fun(self.ctx, &elements[id as usize])
 		}
-		self.ctx.chunks[self.id].elements = elements;
-		self.base_el
+		self.ctx.chunks[id].elements = elements;
+		base_el
 	}
 }
 impl StoreProv for ChunkBuild<'_> {
@@ -137,19 +161,7 @@ impl StoreProv for ChunkBuild<'_> {
 impl ScopedStoreProv for ChunkBuild<'_> {
 	/// Returns the [`SlabId`] of the chunk.
 	fn slab(&self) -> Option<SlabId> {
-		self.slab
-	}
-}
-impl Debug for ChunkBuild<'_> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("ChunkBuild")
-			.field("ctx", &self.ctx.id)
-			.field("id", &self.id)
-			.field("slab", &self.slab)
-			.field("base_el", &self.base_el)
-			.field("build_codes", &self.build_codes)
-			.field("ref_queue", &self.ref_queue.iter().map(|v| v.0).collect::<Vec<_>>())
-			.finish()
+		self.state.slab
 	}
 }
 
@@ -179,6 +191,12 @@ impl<'ctx> RemovableChunk<'ctx> {
 		let slab = ctx.store().create_slab();
 		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
+
+	pub fn hibernate(self) -> (&'ctx mut DomContext, DormantRemovableChunk) {
+		let (ctx, chunk) = self.0.hibernate();
+		(ctx, DormantRemovableChunk(chunk))
+	}
+
 	/// Builds the chunk and exports it as an [`Applicable`].
 	///
 	/// It builds the chunk and then returns it as an [`Applicable`] that inserts the chunk into another chunk and handles removing the chunk when the parent chunk is removed.
@@ -193,8 +211,8 @@ impl<'ctx> RemovableChunk<'ctx> {
 	pub fn export(self) -> impl Applicable {
 		let (el, remover) = self.build();
 		move |build: &mut ChunkBuild| {
-			build.build_codes.node(el.into());
-			let slab = build.slab;
+			build.state.build_codes.node(el.into());
+			let slab = build.state.slab;
 			build.store().add_cleaner(slab, move |ctx| remover.remove(ctx)).unwrap()
 		}
 	}
@@ -212,8 +230,8 @@ impl<'ctx> RemovableChunk<'ctx> {
 	/// );
 	/// ```
 	pub fn build(self) -> (Element, ChunkRemover) {
-		let id = self.0.id;
-		let slab = self.0.slab.unwrap();
+		let id = self.0.state.id;
+		let slab = self.0.state.slab.unwrap();
 		let el = self.0.build();
 		(el.clone(), ChunkRemover { id, slab, el })
 	}
@@ -266,5 +284,38 @@ impl ChunkRemover {
 		self.el.remove();
 		// do not run the panic
 		std::mem::forget(self);
+	}
+}
+
+#[derive(Debug)]
+pub struct DormantChunk(BuildState);
+impl DormantChunk {
+	pub fn base_el(&self) -> Element {
+		self.0.base_el.clone()
+	}
+	pub fn slab(&self) -> Option<SlabId> {
+		self.0.slab
+	}
+	pub fn wake(self, ctx: &mut DomContext) -> ChunkBuild<'_> {
+		ChunkBuild { ctx, state: self.0 }
+	}
+}
+
+#[derive(Debug)]
+pub struct DormantRemovableChunk(DormantChunk);
+impl DormantRemovableChunk {
+	pub fn wake(self, ctx: &mut DomContext) -> RemovableChunk<'_> {
+		RemovableChunk(self.0.wake(ctx))
+	}
+}
+impl Deref for DormantRemovableChunk {
+	type Target = DormantChunk;
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+impl DerefMut for DormantRemovableChunk {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
 	}
 }

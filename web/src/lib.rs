@@ -275,8 +275,8 @@ pub mod __private {
 }
 
 pub use {
-	chunk::{ChunkBuild, ChunkRemover, RemovableChunk},
-	context::{ContextId, CtxHandle, CtxOptions, DomContext, get_ctx, new_ctx, use_ctx},
+	chunk::{ChunkBuild, ChunkRemover, DormantChunk, DormantRemovableChunk, RemovableChunk},
+	context::{ContextId, CtxHandle, CtxOptions, DomContext, new_ctx, use_ctx},
 	list_render::{render_list, render_list_enumerated},
 	neoview,
 	utility::show_if,

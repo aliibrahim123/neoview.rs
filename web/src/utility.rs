@@ -13,7 +13,7 @@ pub trait ShowIfValue {
 impl ShowIfValue for bool {
 	fn apply(self, build: &mut ChunkBuild) {
 		if !self {
-			build.build_codes.style("display", "none");
+			build.state.build_codes.style("display", "none");
 		}
 	}
 }

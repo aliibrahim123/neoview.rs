@@ -17,7 +17,7 @@ extern "C" {
 
 /// called by `binder.js` on events.
 pub fn recieve_event(ctx: u32, chunk: u32, fun_id: u32, event: Event) {
-	use_ctx(ContextId(ctx as u64), |ctx| {
+	use_ctx(ContextId(ctx as u64), move |ctx| {
 		let chunk = ChunkId::from(KeyData::from_ffi(chunk as u64));
 		let mut fun = ctx.chunks[chunk].events[fun_id as usize].take().unwrap();
 		fun(ctx, event);
@@ -232,7 +232,7 @@ pub mod __buildcode {
 	macro_rules! start_el {
 		($build:expr, $el:expr, $tag:ident) => {{
 			$crate::html_types::html_tags::$tag;
-			$build.build_codes.start_el(stringify!($tag));
+			$build.state.build_codes.start_el(stringify!($tag));
 			()
 		}};
 		($($t:tt)*) => {
@@ -243,11 +243,11 @@ pub mod __buildcode {
 	#[doc(hidden)]
 	#[cfg(not(feature = "html-types"))]
 	macro_rules! start_el {
+		($build:expr, $el:expr, $tag:ident) => {{
+			$build.state.build_codes.start_el(stringify!($tag));
+			()
+		}};
 		($($t:tt)*) => {
-			($build:expr, $el:expr, $tag:ident) => {{
-				$build.build_codes.start_el(stringify!($tag));
-				()
-			}};
 			__buildcode::start_el_common!($($t)*)
 		}
 	}
@@ -256,7 +256,7 @@ pub mod __buildcode {
 	#[doc(hidden)]
 	macro_rules! start_el_common {
 		($build:expr, $el:expr, $tag:literal) => {{
-			$build.build_codes.start_el($tag);
+			$build.state.build_codes.start_el($tag);
 			()
 		}};
 		($build:expr, $el:expr, $($t:tt)*) => {
@@ -266,8 +266,18 @@ pub mod __buildcode {
 
 	#[macro_export]
 	#[doc(hidden)]
-	#[cfg(feature = "css-types")]
 	macro_rules! attr {
+		($build:expr, $el:expr, [apply], $($value:tt)*) => {
+			$build.apply($($value)*)
+		};
+		($($t:tt)*) => {
+			__buildcode::attr_rich!($($t)*)
+		};
+	}
+	#[macro_export]
+	#[doc(hidden)]
+	#[cfg(feature = "css-types")]
+	macro_rules! attr_rich {
 		($build:expr, $el:expr, [style.$prop:ident], $($value:tt)*) => {{
 			$crate::html_types::css_props::$prop;
 			__buildcode::StyleValue::apply(
@@ -282,7 +292,7 @@ pub mod __buildcode {
 	#[macro_export]
 	#[doc(hidden)]
 	#[cfg(all(feature = "html-types", not(feature = "css-types")))]
-	macro_rules! attr {
+	macro_rules! attr_rich {
 		($($t:tt)*) => { __buildcode::attr_html!($($t)*) };
 	}
 	#[doc(hidden)]
@@ -307,7 +317,7 @@ pub mod __buildcode {
 	#[macro_export]
 	#[doc(hidden)]
 	#[cfg(not(feature = "html-types"))]
-	macro_rules! attr {
+	macro_rules! attr_rich {
 		($build:expr, $el:expr, [$attr:ident], $($value:tt)*) => {
 			__buildcode::AttrValue::apply(
 				__buildcode::refine_value!($($value)*), &mut $build,
@@ -391,7 +401,7 @@ pub mod __buildcode {
 	#[doc(hidden)]
 	macro_rules! end_el {
 		($build:expr, $($t:tt)*) => {
-			$build.build_codes.end_el()
+			$build.state.build_codes.end_el()
 		};
 	}
 
@@ -429,8 +439,8 @@ pub mod __buildcode {
 	pub(crate) type EventFn = Box<dyn FnMut(&mut DomContext, Event)>;
 	#[doc(hidden)]
 	pub fn add_event(build: &mut ChunkBuild, event: &str, fun: EventFn) {
-		let events = &mut build.ctx.chunks[build.id].events;
-		build.build_codes.event(build.ctx.id, build.id, event, events.len() as u64);
+		let events = &mut build.ctx.chunks[build.state.id].events;
+		build.state.build_codes.event(build.ctx.id, build.state.id, event, events.len() as u64);
 		events.push(Some(fun));
 	}
 
@@ -444,7 +454,7 @@ pub mod __buildcode {
 	use web_sys::Event;
 	#[doc(hidden)]
 	pub use {
-		attr, attr_common, colorify, content, end_chunk, end_el, end_op, refine_value, start_chunk,
-		start_el, start_el_common, start_op,
+		attr, attr_common, attr_rich, colorify, content, end_chunk, end_el, end_op, refine_value,
+		start_chunk, start_el, start_el_common, start_op,
 	};
 }

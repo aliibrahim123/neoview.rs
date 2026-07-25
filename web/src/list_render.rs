@@ -95,7 +95,7 @@ fn render_list_core<T: Clone, K: Eq + Hash + 'static>(
 		keys.push(key_fn(&item));
 
 		let item = build_item(build.ctx(), &tag, item, enumerate.then_some(ind), &mut item_chunk);
-		build.build_codes.node(item.el.clone().into());
+		build.state.build_codes.node(item.el.clone().into());
 
 		items.push(Some(item))
 	}

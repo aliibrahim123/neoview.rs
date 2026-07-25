@@ -63,9 +63,9 @@ impl<Fn: FnOnce(&mut ChunkBuild<'_>)> Applicable for Fn {
 /// ```
 pub fn el(tag: &str, applicable: impl Applicable) -> impl Applicable {
 	move |build: &mut ChunkBuild| {
-		build.build_codes.start_el(tag);
+		build.state.build_codes.start_el(tag);
 		applicable.apply(build);
-		build.build_codes.end_el();
+		build.state.build_codes.end_el();
 	}
 }
 

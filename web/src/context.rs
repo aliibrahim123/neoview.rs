@@ -1,17 +1,22 @@
 //! Defines and manages [`DomContext`].
 
+use core::task;
 use std::{
 	cell::{Ref, RefCell, RefMut},
+	collections::VecDeque,
+	ops::{Deref, DerefMut},
+	pin::Pin,
 	rc::{Rc, Weak},
 	sync::atomic::{AtomicU64, Ordering},
+	task::Poll,
 };
 
-use neoview::{Context, GlobalStoreProv, Store, StoreProv};
+use neoview::{Context, Error, GlobalStoreProv, Store, StoreProv};
 use rustc_hash::FxHashMap;
 use slotmap::SlotMap;
 use web_sys::{Element, window};
 
-use crate::chunk::{Chunk, ChunkBuild, ChunkId, RemovableChunk};
+use crate::chunk::{ChunkBuild, ChunkData, ChunkId, RemovableChunk};
 
 /// A unique identifier for a [`DomContext`].
 ///
@@ -76,7 +81,7 @@ pub struct DomContext {
 	/// The store of the `DomContext`.
 	store: Store<Self>,
 	/// The chunks of the `DomContext`.
-	pub(crate) chunks: SlotMap<ChunkId, Chunk>,
+	pub(crate) chunks: SlotMap<ChunkId, ChunkData>,
 }
 
 /// Creates a new [`DomContext`].
@@ -111,9 +116,17 @@ impl DomContext {
 	pub fn root_el(&self) -> Element {
 		self.root_el.clone()
 	}
+
+	pub fn new_handle(&self) -> CtxHandle {
+		CTX_MAP.with_borrow(|map| {
+			let ctx = &map.get(&self.id).unwrap().box_;
+			CtxHandle { id: self.id, ctx: Weak::upgrade(ctx).unwrap() }
+		})
+	}
+
 	/// Creates a new [`Chunk`] and returns its [`ChunkId`].
 	fn new_chunk_id(&mut self) -> ChunkId {
-		self.chunks.insert(Chunk::default())
+		self.chunks.insert(ChunkData::default())
 	}
 
 	/// Creates a [`ChunkBuild`] targeting the root [`Element`].
@@ -148,6 +161,12 @@ impl DomContext {
 	pub fn new_chunk(&mut self, base_el: Element) -> ChunkBuild<'_> {
 		let id = self.new_chunk_id();
 		ChunkBuild::new(self, id, None, base_el)
+	}
+
+	pub fn new_chunk_tagged(&mut self, tag: &str) -> ChunkBuild<'_> {
+		let id = self.new_chunk_id();
+		let el = window().unwrap().document().unwrap().create_element(tag).unwrap();
+		ChunkBuild::new(self, id, None, el)
 	}
 
 	/// Creates a [`RemovableChunk`] targeting a new [`Element`] of a given `tag`.
@@ -195,9 +214,14 @@ impl Drop for DomContext {
 	}
 }
 
+struct CtxUnit {
+	box_: Weak<RefCell<DomContext>>,
+	requests: VecDeque<Box<dyn FnOnce(&mut DomContext)>>,
+}
+
 thread_local!(
 	/// A weak map storing [`DomContext`]s.
-	static CTX_MAP: RefCell<FxHashMap<ContextId, Weak<RefCell<DomContext>>>> = Default::default();
+	static CTX_MAP: RefCell<FxHashMap<ContextId, CtxUnit>> = Default::default();
 );
 
 /// A handle to a [`DomContext`].
@@ -218,20 +242,50 @@ impl CtxHandle {
 		let id = ctx.id;
 		let ctx = Rc::new(RefCell::new(ctx));
 		let weak = Rc::downgrade(&ctx);
-		CTX_MAP.with_borrow_mut(|map| map.insert(id, weak));
+		CTX_MAP.with_borrow_mut(|map| {
+			map.insert(id, CtxUnit { box_: weak, requests: VecDeque::new() })
+		});
 		Self { id, ctx }
 	}
 	/// Returns the [`ContextId`] of the [`DomContext`].
 	pub fn id(&self) -> ContextId {
 		self.id
 	}
-	/// Returns a reference to the [`DomContext`].
-	pub fn borrow(&self) -> Ref<'_, DomContext> {
-		self.ctx.borrow()
-	}
 	/// Returns a mutable reference to the [`DomContext`].
-	pub fn borrow_mut(&self) -> RefMut<'_, DomContext> {
-		self.ctx.borrow_mut()
+	pub fn borrow(&self) -> Option<impl DerefMut<Target = DomContext>> {
+		self.ctx.try_borrow_mut().ok().map(ContextRef)
+	}
+
+	pub fn use_ctx(&self, fun: impl FnOnce(&mut DomContext) + 'static) {
+		match self.borrow() {
+			Some(mut ctx) => fun(&mut ctx),
+			None => CTX_MAP.with_borrow_mut(|map| {
+				map.get_mut(&self.id).unwrap().requests.push_back(Box::new(fun));
+			}),
+		}
+	}
+
+	pub fn acquire(&self) -> impl Future<Output = impl DerefMut<Target = DomContext>> {
+		pub struct Task<'ctx> {
+			handle: &'ctx CtxHandle,
+		}
+		impl<'ctx> Future for Task<'ctx> {
+			type Output = ContextRef<'ctx>;
+			fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+				match self.handle.ctx.try_borrow_mut() {
+					Ok(ctx) => Poll::Ready(ContextRef(ctx)),
+					Err(_) => {
+						let waker = cx.waker().clone();
+						CTX_MAP.with_borrow_mut(|map| {
+							let requests = &mut map.get_mut(&self.handle.id).unwrap().requests;
+							requests.push_back(Box::new(move |_| waker.wake_by_ref()));
+						});
+						Poll::Pending
+					}
+				}
+			}
+		}
+		Task { handle: self }
 	}
 }
 impl Drop for CtxHandle {
@@ -244,26 +298,30 @@ impl Drop for CtxHandle {
 	}
 }
 
-/// Returns a [`CtxHandle`] to the [`DomContext`] of the given [`ContextId`] if it exists.
-///
-/// This function is only used when handling events. Passing the context directly is the preferred approach in almost all cases.
-///
-/// Returns `None` if the [`DomContext`] was dropped previously.
-///
-/// # Example
-/// ```
-/// fn on_event(event: Event) {
-///     let ctx = get_ctx(id).unwrap();
-///     let mut ctx = ctx.borrow_mut();
-///     // ...
-///     Store::flush_updates(ctx);
-/// }
-/// ```
-pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
-	CTX_MAP.with_borrow(|map| {
-		let ctx = map.get(&id)?;
-		Some(CtxHandle { id, ctx: Weak::upgrade(ctx)? })
-	})
+#[derive(Debug)]
+pub struct ContextRef<'a>(RefMut<'a, DomContext>);
+impl Deref for ContextRef<'_> {
+	type Target = DomContext;
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+impl DerefMut for ContextRef<'_> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
+impl Drop for ContextRef<'_> {
+	fn drop(&mut self) {
+		Store::flush_updates(&mut *self.0);
+		let ctx_id = self.0.id;
+		while let Some(fun) =
+			CTX_MAP.with_borrow_mut(|map| map.get_mut(&ctx_id).unwrap().requests.pop_front())
+		{
+			fun(&mut *self.0);
+			Store::flush_updates(&mut *self.0);
+		}
+	}
 }
 
 /// Calls a function with a mutable reference to a [`DomContext`] if it exists.
@@ -280,11 +338,21 @@ pub fn get_ctx(id: ContextId) -> Option<CtxHandle> {
 ///     }).unwrap();
 /// }
 /// ```
-#[allow(clippy::result_unit_err)]
-pub fn use_ctx(id: ContextId, fun: impl FnOnce(&mut DomContext)) -> Result<(), ()> {
-	let ctx = get_ctx(id).ok_or(())?;
-	let mut ctx = ctx.borrow_mut();
-	fun(&mut ctx);
-	Store::flush_updates(&mut *ctx);
+pub fn use_ctx(id: ContextId, fun: impl FnOnce(&mut DomContext) + 'static) -> Result<(), Error> {
+	let res = CTX_MAP.with_borrow_mut(|map| {
+		let unit = map.get_mut(&id).ok_or(Error::Removed)?;
+		let ctx = unit.box_.upgrade().unwrap();
+		if ctx.try_borrow_mut().is_err() {
+			unit.requests.push_back(Box::new(fun));
+			Ok(None)
+		} else {
+			Ok(Some((ctx, fun)))
+		}
+	})?;
+	if let Some((ctx, fun)) = res {
+		let mut ctx = ctx.borrow_mut();
+		fun(&mut ctx);
+		Store::flush_updates(&mut *ctx);
+	}
 	Ok(())
 }
