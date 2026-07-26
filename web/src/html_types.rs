@@ -738,7 +738,7 @@ pub mod html_events {
 	pub fn focusin() {}
 	/// The [`focusout`](https://developer.mozilla.org/en-US/docs/Web/API/Element/focusout_event) event fires when an element has lost focus, after the `blur` event.
 	pub fn focusout() {}
-	/// The [`formdata`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/formdata_event) event fires after the entry list representing the form's data is confned() {}
+	/// The [`formdata`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement/formdata_event) event fires after the entry list representing the form's data is confined() {}
 	pub fn formdata() {}
 	/// The [`fullscreenchange`](https://developer.mozilla.org/en-US/docs/Web/API/Element/fullscreenchange_event) event is fired immediately after an `Element` switches into or out of fullscreen mode.
 	pub fn fullscreenchange() {}

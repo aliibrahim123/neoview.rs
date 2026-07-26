@@ -362,7 +362,7 @@ pub enum Error {
 	Removed,
 	/// duplicated propids were given to [`Store::try_read_disjoint_mut`]
 	NotDisjoint,
-	/// requested to track while curently tracking.
+	/// requested to track while currently tracking.
 	Tracking,
 	/// requesting to end tracking while not tracking currently.
 	NotTracking,

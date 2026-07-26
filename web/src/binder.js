@@ -4,21 +4,23 @@
 /** @type { (ctx: number, chunk: number, fun_id: number, event: Event) => void } */
 let event_listener = /** @type {any} */ (null);
 /** @type { (fun: (ctx: number, chunk: number, fun_id: number, event: Event) => void) => void } */
-export function register_event_callback (fun) {
+export function register_event_callback(fun) {
 	event_listener = fun;
 }
 
 /** @typedef { { ind: number } } Cursor */
 
 /** @type { (buf: Uint8Array, cur: Cursor) => number } */
-function decode_u8 (buf, cur) {
-	return buf[cur.ind++]
+function decode_u8(buf, cur) {
+	return buf[cur.ind++];
 }
 
 /** decode LEB128 unsigned integer
 	@type { (buf: Uint8Array, cur: Cursor) => number } */
-function decode_vuint (buf, cur) {
-	let res = 0, shift = 0, cond = true;
+function decode_vuint(buf, cur) {
+	let res = 0,
+		shift = 0,
+		cond = true;
 	while (cond) {
 		let byte = decode_u8(buf, cur);
 		res |= (byte & 0b0111_1111) << shift;
@@ -28,9 +30,9 @@ function decode_vuint (buf, cur) {
 	return res;
 }
 
-let text_decoder = new TextDecoder;
+let text_decoder = new TextDecoder();
 /** @type { (buf: Uint8Array, cur: Cursor) => string } */
-function decode_str (buf, cur) {
+function decode_str(buf, cur) {
 	let len = decode_vuint(buf, cur);
 	let text = text_decoder.decode(buf.subarray(cur.ind, cur.ind + len));
 	cur.ind += len;
@@ -38,10 +40,10 @@ function decode_str (buf, cur) {
 }
 
 /** @type { (buf: Uint8Array, cur: Cursor) => string } */
-function decode_name (buf, cur) {
+function decode_name(buf, cur) {
 	let tag = decode_vuint(buf, cur);
 	if ((tag & 1) === 1) {
-		return common_names[tag >> 1]
+		return common_names[tag >> 1];
 	}
 	let len = tag >> 1;
 	let text = text_decoder.decode(buf.subarray(cur.ind, cur.ind + len));
@@ -63,53 +65,53 @@ const END = 255;
 /** @type { (
 	el: HTMLElement, build_codes: Uint8Array, cur: Cursor, el_refs: Element[], props: any[], nodes: Node[]
 ) => void } */
-function construct_el (el, build_codes, cur, el_refs, props, nodes) {
+function construct_el(el, build_codes, cur, el_refs, props, nodes) {
 	while (true) {
 		let op = decode_u8(build_codes, cur);
 		switch (op) {
 			case EL_START: {
 				let tag = decode_name(build_codes, cur);
-				let child = document.createElement(tag)
+				let child = document.createElement(tag);
 				construct_el(child, build_codes, cur, el_refs, props, nodes);
 				el.append(child);
-				break
+				break;
 			}
 			case EL_ID: {
 				el_refs.push(el);
-				break
+				break;
 			}
 			case ATTR: {
 				let attr = decode_name(build_codes, cur);
 				let value = decode_str(build_codes, cur);
 				el.setAttribute(attr, value);
-				break
+				break;
 			}
 			case PROP: {
 				let prop = decode_str(build_codes, cur);
 				let ind = decode_vuint(build_codes, cur);
 				/** @type {any} */ (el)[prop] = props[ind];
-				break
+				break;
 			}
 			case CLASS: {
 				let name = decode_str(build_codes, cur);
 				el.classList.add(name);
-				break
+				break;
 			}
 			case STYLE: {
 				let prop = decode_name(build_codes, cur);
 				let value = decode_str(build_codes, cur);
-				el.style.setProperty(prop, value)
-				break
+				el.style.setProperty(prop, value);
+				break;
 			}
 			case TEXT: {
 				let text = decode_str(build_codes, cur);
 				el.append(text);
-				break
+				break;
 			}
 			case NODE: {
 				let ind = decode_vuint(build_codes, cur);
-				el.append(nodes[ind])
-				break
+				el.append(nodes[ind]);
+				break;
 			}
 			case EVENT: {
 				let ctx = decode_vuint(build_codes, cur);
@@ -117,22 +119,24 @@ function construct_el (el, build_codes, cur, el_refs, props, nodes) {
 				let name = decode_name(build_codes, cur);
 				let fun_id = decode_vuint(build_codes, cur);
 				el.addEventListener(name, (event) => event_listener(ctx, chunk, fun_id, event));
-				break
+				break;
 			}
-			case END: return;
-			default: throw `binder: unkown opcode ${op}`
+			case END:
+				return;
+			default:
+				throw `binder: unkown opcode ${op}`;
 		}
 	}
 }
 
-/** contruct an element from build codes
+/** construct an element from build codes
   @type { (
 	target_el: HTMLElement, build_codes: Uint8Array, props: any[], nodes: Node[]
   ) => Element[] } */
-export function construct (target_el, build_codes, props, nodes) {
+export function construct(target_el, build_codes, props, nodes) {
 	let cur = { ind: 0 };
 	let el_refs = [target_el];
 	construct_el(target_el, build_codes, cur, el_refs, props, nodes);
-	if (cur.ind !== build_codes.length) throw "binder: excess input";
+	if (cur.ind !== build_codes.length) throw 'binder: excess input';
 	return el_refs;
 }

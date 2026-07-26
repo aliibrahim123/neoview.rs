@@ -264,7 +264,7 @@ impl CtxHandle {
 	}
 	/// Returns a mutable reference to the [`DomContext`].
 	///
-	/// It return a gaurd that flushes updates when dropped. And returns `None` if the [`DomContext`] has active mutation.
+	/// It return a guard that flushes updates when dropped. And returns `None` if the [`DomContext`] has active mutation.
 	///
 	/// # Example
 	/// ```
@@ -299,7 +299,7 @@ impl CtxHandle {
 
 	/// Acquire the [`DomContext`] in the async style.
 	///
-	/// it return a [`Future`] that resolve to a gaurd providing mutable access to the [`DomContext`] when it is available (has no active mutation), while also flushing updates.
+	/// it return a [`Future`] that resolve to a guard providing mutable access to the [`DomContext`] when it is available (has no active mutation), while also flushing updates.
 	///
 	/// # Example
 	/// ```
@@ -345,7 +345,7 @@ impl Drop for CtxHandle {
 	}
 }
 
-/// A gaurd around [`DomContext`] access.
+/// A guard around [`DomContext`] access.
 ///
 /// it flushs updates and run defered uses when dropped.
 #[derive(Debug)]

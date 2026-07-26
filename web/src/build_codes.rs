@@ -8,7 +8,7 @@ use crate::{chunk::ChunkId, context::ContextId, use_ctx};
 
 #[wasm_bindgen_from_build("binder.js")]
 extern "C" {
-	/// contruct an element from build codes, returning the requested elements.
+	/// construct an element from build codes, returning the requested elements.
 	pub fn construct(
 		target_el: &Element, build_codes: Vec<u8>, props: Vec<JsValue>, nodes: Vec<Node>,
 	) -> Vec<Element>;
@@ -16,7 +16,7 @@ extern "C" {
 }
 
 /// called by `binder.js` on events.
-pub fn recieve_event(ctx: u32, chunk: u32, fun_id: u32, event: Event) {
+pub fn rechieve_event(ctx: u32, chunk: u32, fun_id: u32, event: Event) {
 	use_ctx(ContextId(ctx as u64), move |ctx| {
 		let chunk = ChunkId::from(KeyData::from_ffi(chunk as u64));
 		let mut fun = ctx.chunks[chunk].events[fun_id as usize].take().unwrap();
@@ -29,7 +29,7 @@ pub fn recieve_event(ctx: u32, chunk: u32, fun_id: u32, event: Event) {
 #[wasm_bindgen(start)]
 pub fn neoview_init_binder() {
 	let closure = Closure::<dyn Fn(u32, u32, u32, Event)>::new(|ctx, chunk, fun_id, event| {
-		recieve_event(ctx, chunk, fun_id, event)
+		rechieve_event(ctx, chunk, fun_id, event)
 	});
 	register_event_callback(closure.as_ref().unchecked_ref());
 	closure.forget();
@@ -53,7 +53,7 @@ const COMMON_NAMES: &[&str] = &include!(concat!(env!("OUT_DIR"), "/common_names.
 ///
 /// buildcode:
 /// - `0 tag:name buildcode* 0xff`: construct an element of `tag` and apply `buildcode`s to it.
-/// - `1`: requrest the element and push it into a buffer that gets returned at the end.
+/// - `1`: request the element and push it into a buffer that gets returned at the end.
 /// - `2 attr:name value:str`: apply attribute `attr` with value `value`.
 /// - `3 prop:name val_ind:vuint`: set element property `prop` to value stored in `props[val_ind]`.
 /// - `4 class:str`: add class `class` to element.
