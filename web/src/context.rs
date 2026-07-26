@@ -2,7 +2,7 @@
 
 use core::task;
 use std::{
-	cell::{Ref, RefCell, RefMut},
+	cell::{RefCell, RefMut},
 	collections::VecDeque,
 	ops::{Deref, DerefMut},
 	pin::Pin,
@@ -20,7 +20,7 @@ use crate::chunk::{ChunkBuild, ChunkData, ChunkId, RemovableChunk};
 
 /// A unique identifier for a [`DomContext`].
 ///
-/// This is used when retrieving a [`DomContext`] using [`get_ctx`].
+/// This is used when retrieving a [`DomContext`] using [`use_ctx`].
 /// ```
 /// let id = ctx.id();
 /// // some time
@@ -62,13 +62,6 @@ impl Default for CtxOptions {
 /// let ctx = handle.borrow_mut();
 /// ```
 ///
-/// It is identified by a [`ContextId`] which is used when retrieving it using [`get_ctx`].
-/// ```
-/// let id = ctx.id();
-/// // some time
-/// let ctx = get_ctx(id).unwrap();
-/// ```
-///
 /// `DomContext` cannot be stored directly by value. Instead it is owned in a [`CtxHandle`].
 #[derive(Debug)]
 pub struct DomContext {
@@ -94,7 +87,7 @@ pub struct DomContext {
 /// ```
 /// let el = windows().unwrap().document().unwrap().create_element("div").unwrap();
 /// let handle = new_ctx(el, CtxOptions::default());
-/// let ctx = handle.borrow_mut();
+/// let ctx = handle.borrow().unwrap();
 /// ```
 pub fn new_ctx(root_el: Element, opts: CtxOptions) -> CtxHandle {
 	let ctx = DomContext {
@@ -117,6 +110,7 @@ impl DomContext {
 		self.root_el.clone()
 	}
 
+	/// create a new [`CtxHandle`] from this `DomContext`.
 	pub fn new_handle(&self) -> CtxHandle {
 		CTX_MAP.with_borrow(|map| {
 			let ctx = &map.get(&self.id).unwrap().box_;
@@ -163,6 +157,17 @@ impl DomContext {
 		ChunkBuild::new(self, id, None, base_el)
 	}
 
+	/// Creates a [`ChunkBuild`] targeting a new [`Element`] of a given `tag`.
+	///
+	/// This is a shorthand for [`new_chunk(document.create_element(tag))`](DomContext::new_chunk).
+	///
+	/// # Example
+	/// ```
+	/// let mut build = root_build.ctx().new_chunk_tagged("div");
+	/// chunk!(build, "hello world");
+	/// build.build();
+	/// chunk!(root_build, el);
+	/// ```
 	pub fn new_chunk_tagged(&mut self, tag: &str) -> ChunkBuild<'_> {
 		let id = self.new_chunk_id();
 		let el = window().unwrap().document().unwrap().create_element(tag).unwrap();
@@ -214,9 +219,13 @@ impl Drop for DomContext {
 	}
 }
 
+/// The function of [`use_ctx`]
+type UseRequest = Box<dyn FnOnce(&mut DomContext)>;
+
+/// [`CTX_MAP`] value
 struct CtxUnit {
 	box_: Weak<RefCell<DomContext>>,
-	requests: VecDeque<Box<dyn FnOnce(&mut DomContext)>>,
+	requests: VecDeque<UseRequest>,
 }
 
 thread_local!(
@@ -227,6 +236,8 @@ thread_local!(
 /// A handle to a [`DomContext`].
 ///
 /// Since events require access to the [`DomContext`], the [`DomContext`] cannot be stored directly by value. A handle is provided instead.
+///
+/// It provide several methods to access the [`DomContext`]: a primitive [`borrow`](CtxHandle::borrow), a defered [`use_ctx`](CtxHandle::use_ctx), and async oriented [`acquire`](CtxHandle::acquire).
 ///
 /// The [`DomContext`] is dropped only when all handles to it are dropped.
 #[derive(Debug, Clone)]
@@ -252,10 +263,31 @@ impl CtxHandle {
 		self.id
 	}
 	/// Returns a mutable reference to the [`DomContext`].
+	///
+	/// It return a gaurd that flushes updates when dropped. And returns `None` if the [`DomContext`] has active mutation.
+	///
+	/// # Example
+	/// ```
+	/// let handle = new_ctx(root_el, CtxOptions::default());
+	/// let ctx = handle.borrow_mut().unwrap();
+	/// // ...
+	/// ```
 	pub fn borrow(&self) -> Option<impl DerefMut<Target = DomContext>> {
 		self.ctx.try_borrow_mut().ok().map(ContextRef)
 	}
 
+	/// Use the [`DomContext`] when it is available.
+	///
+	/// It call the provided function directly if the [`DomContext`] is available (has no active mutation), otherwise it defer it until the [`DomContext`] become available, with updates flushing.
+	///
+	/// this is a version of [`use_ctx`] for cases that need to own the [`CtxHandle`].
+	///
+	/// # Example
+	/// ```
+	/// let time = build.prop(0);
+	/// chunk!(build, "time: ", count);
+	/// set_interval(move || handle.use_ctx(move |ctx| ctx.update(time, |v| *v += 1)), 1000);
+	/// ```
 	pub fn use_ctx(&self, fun: impl FnOnce(&mut DomContext) + 'static) {
 		match self.borrow() {
 			Some(mut ctx) => fun(&mut ctx),
@@ -265,6 +297,21 @@ impl CtxHandle {
 		}
 	}
 
+	/// Acquire the [`DomContext`] in the async style.
+	///
+	/// it return a [`Future`] that resolve to a gaurd providing mutable access to the [`DomContext`] when it is available (has no active mutation), while also flushing updates.
+	///
+	/// # Example
+	/// ```
+	/// spawn_local(async move {
+	///    while let Some(content) = some_stream.next().await {
+	///         let mut ctx = handle.acquire().await;
+	///         let mut build = ctx.new_chunk(el);
+	///         chunk!(build, content);
+	///         build.build();
+	///     }
+	/// })
+	/// ```
 	pub fn acquire(&self) -> impl Future<Output = impl DerefMut<Target = DomContext>> {
 		pub struct Task<'ctx> {
 			handle: &'ctx CtxHandle,
@@ -298,6 +345,9 @@ impl Drop for CtxHandle {
 	}
 }
 
+/// A gaurd around [`DomContext`] access.
+///
+/// it flushs updates and run defered uses when dropped.
 #[derive(Debug)]
 pub struct ContextRef<'a>(RefMut<'a, DomContext>);
 impl Deref for ContextRef<'_> {
@@ -318,25 +368,28 @@ impl Drop for ContextRef<'_> {
 		while let Some(fun) =
 			CTX_MAP.with_borrow_mut(|map| map.get_mut(&ctx_id).unwrap().requests.pop_front())
 		{
-			fun(&mut *self.0);
+			fun(&mut self.0);
 			Store::flush_updates(&mut *self.0);
 		}
 	}
 }
 
-/// Calls a function with a mutable reference to a [`DomContext`] if it exists.
+/// Use a [`DomContext`] when it is available.
 ///
-/// This function is a convenient wrapper for [`get_ctx`] that also flushes updates.
+/// it take the [`DomContext`] [`ContextId`], then call the provided function if the [`DomContext`] is available (has no active mutation), otherwise it defer it until the [`DomContext`] become available.
 ///
-/// It returns `Err(())` if the [`DomContext`] was dropped previously.
+/// this function flushes updates, and return [`Error::Removed`] if the [`DomContext`] was dropped previously.
+///
+/// this is a version of [`CtxHandle::use_ctx`] for cases that doesnt need to own the [`CtxHandle`].
 ///
 /// # Example
 /// ```
-/// fn on_event(event: Event) {
-///     use_ctx(id, |ctx| {
-///         // ...
-///     }).unwrap();
-/// }
+/// set_interval(move |id| {
+///     let res = use_ctx(ctx_id, move |ctx| ctx.update(time, |v| *v += 1));
+///     if let Err(err) = res {
+///         clear_interval(id);
+///     }
+/// }, 1000);
 /// ```
 pub fn use_ctx(id: ContextId, fun: impl FnOnce(&mut DomContext) + 'static) -> Result<(), Error> {
 	let res = CTX_MAP.with_borrow_mut(|map| {
@@ -349,6 +402,7 @@ pub fn use_ctx(id: ContextId, fun: impl FnOnce(&mut DomContext) + 'static) -> Re
 			Ok(Some((ctx, fun)))
 		}
 	})?;
+	// call the function outside `CTX_MAP` borrow to avoid deadlock
 	if let Some((ctx, fun)) = res {
 		let mut ctx = ctx.borrow_mut();
 		fun(&mut ctx);

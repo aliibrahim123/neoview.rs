@@ -7,11 +7,15 @@
 //! # Example
 //! ```
 //! let count = build.prop(0);
-//! build.apply(div((
-//!     h1((id("header"), style("color", "red"), text("hello world"))),
+//! build.apply(div((id("section"), style("color", "red"),
+//!     text("hello world"),
+//!     move |build: &mut ChunkBuild| for i in 0..10 {
+//!         build.apply((text(format!("item {i}")), br(())));
+//!     },
 //!     button((
-//!         on("click", move |ctx, _| *ctx.read_mut(count) += 1), text("count: "), text(count)
-//!    )),
+//!         on("click", move |ctx, _| ctx.update(count, |v| *v += 1)),
+//!         text("count: "), text(count),
+//!     )),
 //! )));
 //! ```
 use std::{borrow::Cow, hash::Hash};

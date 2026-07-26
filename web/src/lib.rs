@@ -145,6 +145,14 @@ pub mod __private {
 	/// ```
 	///
 	/// ## Special Attributes
+	/// ### `apply`
+	/// apply the given [`Applicable`](apply::Applicable) to the current element.
+	///
+	/// ```
+	/// let active = build.prop(false);
+	/// chunk!(build, div(apply: show_if(active)));
+	/// ```
+	///
 	/// ### `class.name`
 	/// The class `name` is toggled statically or dynamically based on a value.
 	///

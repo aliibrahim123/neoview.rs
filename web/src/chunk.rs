@@ -30,6 +30,7 @@ impl Debug for ChunkData {
 	}
 }
 
+/// The state of a [`ChunkBuild`].
 pub struct BuildState {
 	/// The chunk ID.
 	pub id: ChunkId,
@@ -70,11 +71,29 @@ impl Debug for BuildState {
 ///
 /// # Example
 /// ```
-/// let el = window().unwrap().document().unwrap().create_element("div").unwrap();
-/// let mut build = root_build.ctx().new_chunk(el);
-/// chunk!(build, div(id: "section") { "hello world" });
-/// build.apply(div((id("section"), text("hello world"))));
-/// build.build();
+/// let mut build = root_build.ctx().new_chunk_tagged("div");
+///
+/// let count = build.prop(0);
+/// chunk!(build, div(id: "section", style.color: "red") {
+///     "hello world",
+///     for i in 0..10 {
+///         "item ", i, br()
+///     }
+///     button(on.click: (move |ctx, _| ctx.update(count, |v| *v += 1))) { "count: ", count }
+/// });
+///
+/// build.apply(div((id("section"), style("color", "red"),
+///     text("hello world"),
+///     move |build: &mut ChunkBuild| for i in 0..10 {
+///         build.apply((text(format!("item {i}")), br(())));
+///     },
+///     button((
+///         on("click", move |ctx, _| ctx.update(count, |v| *v += 1)),
+///         text("count: "), text(count),
+///     )),
+/// )));
+///
+/// let el = build.build();
 /// chunk!(root_build, el);
 /// ```
 #[derive(Debug)]
@@ -105,8 +124,17 @@ impl<'ctx> ChunkBuild<'ctx> {
 	///
 	/// # Example
 	/// ```
-	/// build.apply(div((id("section"), text("hello world"))));
-	/// ```
+	/// let count = build.prop(0);
+	/// build.apply(div((id("section"), style("color", "red"),
+	///     text("hello world"),
+	///     move |build: &mut ChunkBuild| for i in 0..10 {
+	///         build.apply((text(format!("item {i}")), br(())));
+	///     },
+	///     button((
+	///         on("click", move |ctx, _| ctx.update(count, |v| *v += 1)),
+	///         text("count: "), text(count),
+	///     )),
+	/// )));
 	pub fn apply(&mut self, what: impl Applicable) {
 		what.apply(self);
 	}
@@ -123,6 +151,21 @@ impl<'ctx> ChunkBuild<'ctx> {
 		self.state.ref_queue.push((self.state.build_codes.request_id(), Box::new(fun)));
 	}
 
+	/// Pause the chunk construction for later continuation.
+	///
+	/// this method returns the [`DomContext`] and the chunk state inside a [`DormantChunk`] which can be reactivated at any time using [`DormantChunk::wake`].
+	///
+	/// # Example
+	/// ```
+	/// chunk!(build, "initial section");
+	/// let (ctx, chunk) = build.hibernate();
+	/// let ctx_id = ctx.id();
+	/// fetch_content().then(move |content| use_ctx(ctx_id, move |ctx| {
+	///     let mut build = chunk.wake(ctx);
+	///     chunk!(build, content);
+	///     build.build();
+	/// }));
+	/// ```
 	pub fn hibernate(self) -> (&'ctx mut DomContext, DormantChunk) {
 		(self.ctx, DormantChunk(self.state))
 	}
@@ -133,8 +176,7 @@ impl<'ctx> ChunkBuild<'ctx> {
 	///
 	/// # Example
 	/// ```
-	/// let el = window().unwrap().document().unwrap().create_element("div").unwrap();
-	/// let mut build = root_build.ctx().new_chunk(el);
+	/// let mut build = root_build.ctx().new_chunk_tagged("div");
 	/// chunk!(build, div { "hello world" });
 	/// build.build();
 	/// chunk!(root_build, el);
@@ -192,6 +234,21 @@ impl<'ctx> RemovableChunk<'ctx> {
 		Self(ChunkBuild::new(ctx, id, Some(slab), base_el))
 	}
 
+	/// Pause the chunk construction for later continuation.
+	///
+	/// this method returns the [`DomContext`] and the chunk state inside a [`DormantRemovableChunk`] which can be reactivated at any time using [`DormantRemovableChunk::wake`].
+	///
+	/// # Example
+	/// ```
+	/// chunk!(build, "initial section");
+	/// let (ctx, chunk) = build.hibernate();
+	/// let ctx_id = ctx.id();
+	/// fetch_content().then(move |content| use_ctx(ctx_id, move |ctx| {
+	///     let mut build = chunk.wake(ctx);
+	///     chunk!(build, content);
+	///     build.build();
+	/// }));
+	/// ```
 	pub fn hibernate(self) -> (&'ctx mut DomContext, DormantRemovableChunk) {
 		let (ctx, chunk) = self.0.hibernate();
 		(ctx, DormantRemovableChunk(chunk))
@@ -287,23 +344,69 @@ impl ChunkRemover {
 	}
 }
 
+/// An Inactive [`ChunkBuild`].
+///
+/// it is created by [`ChunkBuild::hibernate`], and can be reactive using [`wake`](DormantChunk::wake).
+///
+/// # Example
+/// ```
+/// chunk!(build, "initial section");
+/// let (ctx, chunk) = build.hibernate();
+/// let ctx_id = ctx.id();
+/// fetch_content().then(move |content| use_ctx(ctx_id, move |ctx| {
+///     let mut build = chunk.wake(ctx);
+///     chunk!(build, content);
+///     build.build();
+/// }));
+/// ```
 #[derive(Debug)]
 pub struct DormantChunk(BuildState);
 impl DormantChunk {
+	/// Returns the base [`Element`] of the chunk.
 	pub fn base_el(&self) -> Element {
 		self.0.base_el.clone()
 	}
+	/// Returns the [`SlabId`] of the chunk.
 	pub fn slab(&self) -> Option<SlabId> {
 		self.0.slab
 	}
+	/// Reactivates the chunk.
+	///
+	/// it take the [`DomContext`] and returns a [`ChunkBuild`] with the exact state as the original.
+	///
+	/// ```
+	/// chunk!(build, "initial section");
+	/// let (ctx, chunk) = build.hibernate();
+	/// let ctx_id = ctx.id();
+	/// fetch_content().then(move |content| use_ctx(ctx_id, move |ctx| {
+	///     let mut build = chunk.wake(ctx);
+	///     chunk!(build, content);
+	///     build.build();
+	/// }));
+	/// ```
 	pub fn wake(self, ctx: &mut DomContext) -> ChunkBuild<'_> {
 		ChunkBuild { ctx, state: self.0 }
 	}
 }
 
+/// The [`DormantChunk`] version of [`RemovableChunk`].
 #[derive(Debug)]
 pub struct DormantRemovableChunk(DormantChunk);
 impl DormantRemovableChunk {
+	/// Reactivates the chunk.
+	///
+	/// it take the [`DomContext`] and returns a [`RemovableChunk`] with the exact state as the original.
+	///
+	/// ```
+	/// chunk!(build, "initial section");
+	/// let (ctx, chunk) = build.hibernate();
+	/// let ctx_id = ctx.id();
+	/// fetch_content().then(move |content| use_ctx(ctx_id, move |ctx| {
+	///     let mut build = chunk.wake(ctx);
+	///     chunk!(build, content);
+	///     build.build();
+	/// }));
+	/// ```
 	pub fn wake(self, ctx: &mut DomContext) -> RemovableChunk<'_> {
 		RemovableChunk(self.0.wake(ctx))
 	}

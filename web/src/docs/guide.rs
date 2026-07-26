@@ -36,7 +36,7 @@
 //!     // create context
 //!     let handle = new_ctx(el, Default::default());
 //!     {
-//!         let mut ctx = handle.borrow_mut();
+//!         let mut ctx = handle.borrow().unwrap();
 //!         // create root chunk
 //!         let mut build = ctx.root_chunk();
 //!         chunk!(build, div { "Hello world!" });
@@ -239,5 +239,22 @@
 //! Element references are created by calling [`ChunkBuild::ref_el`] when inside the target element.
 //! ```
 //! build.ref_el(|ctx, el| el.focus());
+//! ```
+//!
+//! Async state / rendering is done by creating a syncrouness bubble around context access, this is done though 2 ways, [`CtxHandle::use_ctx`] for events / oneshot logic, and [`CtxHandle::acquire`] for streaming updates.
+//!
+//! ```
+//! set_interval(move ||
+//!     handle.use_ctx(move |ctx| ctx.update(time, |v| *v += 1)),
+//! 1000);
+//!
+//! spawn_local(async move {
+//!	    while let Some(content) = some_stream.next().await {
+//!         let mut ctx = handle.acquire().await;
+//!         let mut build = ctx.new_chunk(el);
+//!         chunk!(build, content);
+//!         build.build();
+//!     }
+//! })
 //! ```
 use crate::{neoview::Store, prelude::*, *};
